@@ -1,7 +1,7 @@
 # 에어컨 요청 텔레그램 봇
 
 텔레그램 봇에서 **위치(9개 구역 + 추가 장소 3곳)** → **🥶 추워요 / 🥵 더워요**를 누르면
-담당자에게 알림이 가는 봇입니다. 구글 Apps Script로 돌아가서 **서버가 필요 없고 무료**입니다.
+담당자 단톡방에 알림이 가는 봇입니다.
 
 ```
 직원 화면                         담당자가 받는 메시지
@@ -12,8 +12,53 @@
 [의자석][로비][단상]
 ```
 
-- 요청한 사람 정보는 담당자에게 보내지 않습니다.
+- 요청한 사람 정보(이름·아이디)는 저장하지도, 담당자에게 보내지도 않습니다.
 - 같은 구역에서 같은 요청이 2분 안에 또 오면 알림을 한 번만 보냅니다.
+
+두 가지 방식이 있습니다. **사람이 많이 쓰면 Cloudflare Workers를 쓰세요.**
+
+| | `worker.js` (Cloudflare Workers) | `Code.gs` (구글 Apps Script) |
+|---|---|---|
+| 반응 속도 | 거의 즉시 | 1~3초 |
+| 비용 | 무료 (하루 10만 건) | 무료 |
+
+## Cloudflare Workers 설치
+
+### 1. Worker 만들기
+1. https://dash.cloudflare.com 가입/로그인
+2. 왼쪽 **Compute (Workers) → Workers & Pages → Create → Start with Hello World!**
+3. 이름(예: `aircon-bot`) 입력 → **Deploy**
+4. **Edit code** → 기존 코드를 모두 지우고 `worker.js` 내용을 붙여넣기 → **Deploy**
+
+### 2. 봇 토큰 넣기 (비밀 변수)
+1. Worker 화면 → **Settings → Variables and Secrets → Add**
+2. Type: **Secret**, Name: `BOT_TOKEN`, Value: 봇 토큰 → **Deploy**
+
+### 3. 중복 방지 저장소 연결
+1. 왼쪽 **Storage & Databases → KV → Create** → 이름 `aircon-cooldown`
+2. Worker 화면 → **Settings → Bindings → Add → KV namespace**
+3. Variable name: `COOLDOWN`, KV namespace: `aircon-cooldown` → **Deploy**
+
+### 4. 텔레그램과 연결
+브라우저에서 `https://<워커주소>/setup` 을 엽니다. (예: `https://aircon-bot.내아이디.workers.dev/setup`)
+✅ 표시 3개가 나오면 끝입니다. 이때부터 Apps Script 쪽은 더 이상 쓰이지 않습니다.
+
+### 설정 바꾸기
+Worker 화면 → **Edit code** → `worker.js` 위쪽 설정 수정 → **Deploy**. (다시 `/setup` 할 필요 없음)
+
+| 설정 | 설명 |
+|---|---|
+| `MANAGER_CHAT_ID` | 담당자 단톡방 ID. 방에서 `/id@봇아이디` 를 보내면 알려줍니다 |
+| `GRID_ZONES` / `EXTRA_ZONES` | 구역·추가 장소 이름 |
+| `ZONE_MANAGERS` | 특정 장소만 다른 담당자에게: `{ '로비': '123456789' }` |
+| `COOLDOWN_SECONDS` | 같은 요청을 다시 알리기까지 시간(초, 60 이상) |
+
+봇이 반응하지 않으면 `/setup` 을 다시 열어 ⚠️/❌ 표시를 확인하거나,
+Worker 화면 → **Logs** 에서 오류를 확인하세요.
+
+---
+
+# (대안) 구글 Apps Script 설치
 
 ## 설치 (10분)
 
