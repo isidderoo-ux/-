@@ -13,7 +13,8 @@
 ```
 
 - 요청한 사람 정보(이름·아이디)는 저장하지도, 담당자에게 보내지도 않습니다.
-- 같은 구역에서 같은 요청이 2분 안에 또 오면 알림을 한 번만 보냅니다.
+- 같은 구역·같은 요청이 10분 안에 또 오면 새 알림 대신 기존 알림에 **요청 건수**가 쌓입니다.
+  (`🥶 [5구역] 추워요  · 요청 3건`) 요청한 직원에게는 "이미 접수됨, 추가 요청으로 반영"이라고 보여줍니다.
 
 두 가지 방식이 있습니다. **사람이 많이 쓰면 Cloudflare Workers를 쓰세요.**
 
@@ -34,7 +35,7 @@
 1. Worker 화면 → **Settings → Variables and Secrets → Add**
 2. Type: **Secret**, Name: `BOT_TOKEN`, Value: 봇 토큰 → **Deploy**
 
-### 3. 중복 방지 저장소 연결
+### 3. 요청 건수 저장소 연결
 1. 왼쪽 **Storage & Databases → KV → Create** → 이름 `aircon-cooldown`
 2. Worker 화면 → **Settings → Bindings → Add → KV namespace**
 3. Variable name: `COOLDOWN`, KV namespace: `aircon-cooldown` → **Deploy**
@@ -51,7 +52,7 @@ Worker 화면 → **Edit code** → `worker.js` 위쪽 설정 수정 → **Deplo
 | `MANAGER_CHAT_ID` | 담당자 단톡방 ID. 방에서 `/id@봇아이디` 를 보내면 알려줍니다 |
 | `GRID_ZONES` / `EXTRA_ZONES` | 구역·추가 장소 이름 |
 | `ZONE_MANAGERS` | 특정 장소만 다른 담당자에게: `{ '로비': '123456789' }` |
-| `COOLDOWN_SECONDS` | 같은 요청을 다시 알리기까지 시간(초, 60 이상) |
+| `MERGE_MINUTES` | 같은 요청을 알림 하나로 합치는 시간(분). 지나면 새 알림이 갑니다 |
 
 봇이 반응하지 않으면 `/setup` 을 다시 열어 ⚠️/❌ 표시를 확인하거나,
 Worker 화면 → **Logs** 에서 오류를 확인하세요.

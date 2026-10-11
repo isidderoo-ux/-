@@ -9,8 +9,9 @@
 // 알림을 받을 담당자(또는 담당자 단톡방)의 채팅 ID. 봇에게 /id 를 보내면 알려줍니다.
 const MANAGER_CHAT_ID = '-5453679069';
 
-// 같은 구역에서 같은 요청을 다시 알리기까지 기다리는 시간(초, 60 이상)
-const COOLDOWN_SECONDS = 120;
+// 첫 요청 후 이 시간(분) 안에 들어온 같은 구역·같은 요청은 담당자 메시지 하나에 건수로 합칩니다.
+// 시간이 지나 또 요청이 오면 새 알림이 갑니다.
+const MERGE_MINUTES = 10;
 
 // 3×3 큰 구역 (위에서부터 3개씩 한 줄)
 const GRID_ZONES = [
@@ -28,7 +29,7 @@ const ZONE_MANAGERS = {};
 // ----- 2. 아래는 수정하지 않아도 됩니다 ---------------------------------
 //
 // 개인정보: 텔레그램이 보내는 이름·아이디는 처리 중에만 메모리에 있고 저장하거나 전달하지 않습니다.
-// 저장하는 것은 2분짜리 중복 방지 기록("cooldown:4:cold")뿐입니다.
+// 저장하는 것은 구역별 요청 건수와 시각, 담당자 메시지 번호뿐이며 MERGE_MINUTES 가 지나면 지워집니다.
 
 const ALL_ZONES = GRID_ZONES.concat(EXTRA_ZONES);
 
@@ -106,31 +107,55 @@ async function handleButton(query, env) {
   const type = TYPES[parts[2]];
   if (parts[0] !== 'type' || !type) return answer();
 
-  const cooldownKey = `cooldown:${parts[1]}:${parts[2]}`;
-  if (env.COOLDOWN && await env.COOLDOWN.get(cooldownKey)) {
-    return answer({ text: zone + '의 같은 요청이 방금 접수됐어요. 담당자가 확인 중입니다.', show_alert: true });
+  const managerChatId = ZONE_MANAGERS[zone] || MANAGER_CHAT_ID;
+  const key = `request:${parts[1]}:${parts[2]}`;
+  const now = Date.now();
+  const windowMs = MERGE_MINUTES * 60 * 1000;
+  const saved = env.COOLDOWN ? await env.COOLDOWN.get(key, 'json') : null;
+  const save = (record) => env.COOLDOWN && env.COOLDOWN
+    .put(key, JSON.stringify(record), { expirationTtl: Math.max(60, Math.ceil((record.first + windowMs - now) / 1000)) })
+    .catch((err) => console.error('KV 저장 실패: ' + err));
+
+  // 이미 알림이 간 요청이면 새 알림 대신 그 메시지의 건수를 올린다.
+  if (saved && now - saved.first < windowMs) {
+    const record = { ...saved, count: saved.count + 1, last: now };
+    const [updated] = await Promise.all([
+      tg(env, 'editMessageText', {
+        chat_id: record.chatId, message_id: record.messageId, text: managerMessage(zone, type, record),
+      }),
+      answer(),
+      edit(`✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${record.count}건)`),
+    ]);
+    if (updated.ok) return save(record);
+    // 담당자 메시지가 지워졌으면 아래에서 새 알림으로 보낸다.
   }
 
   // 전송이 성공한다고 보고 완료 화면까지 함께 보낸 뒤, 실패했을 때만 화면을 고친다.
+  const record = { chatId: managerChatId, count: 1, first: now, last: now };
   const [sent] = await Promise.all([
-    tg(env, 'sendMessage', { chat_id: ZONE_MANAGERS[zone] || MANAGER_CHAT_ID, text: managerMessage(zone, type) }),
+    tg(env, 'sendMessage', { chat_id: managerChatId, text: managerMessage(zone, type, record) }),
     answer(),
     edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.`),
   ]);
   if (!sent.ok) {
     return edit('⚠️ 담당자에게 전송하지 못했어요. 다시 눌러주세요.', typeKeyboard(parts[1]));
   }
-  if (env.COOLDOWN) {
-    await env.COOLDOWN.put(cooldownKey, '1', { expirationTtl: Math.max(60, COOLDOWN_SECONDS) });
-  }
+  await save({ ...record, messageId: sent.result.message_id });
 }
 
-function managerMessage(zone, type) {
+function managerMessage(zone, type, record) {
+  const title = `${type.emoji} [${zone}] ${type.label}` + (record.count > 1 ? `  · 요청 ${record.count}건` : '');
+  const time = record.count > 1
+    ? `처음 ${formatTime(record.first)} · 마지막 ${formatTime(record.last)}`
+    : '시간: ' + formatTime(record.first);
+  return [title, '→ ' + type.action, time].join('\n');
+}
+
+function formatTime(ms) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date()).map((x) => [x.type, x.value]));
-  const time = `${p.month}/${p.day} ${p.hour}:${p.minute}`;
-  return [`${type.emoji} [${zone}] ${type.label}`, '→ ' + type.action, '시간: ' + time].join('\n');
+  }).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return `${p.month}/${p.day} ${p.hour}:${p.minute}`;
 }
 
 function zoneMenuText() {
@@ -199,7 +224,7 @@ async function setup(url, env) {
 
   const lines = [
     result.ok ? '✅ 텔레그램과 연결됐어요.' : '❌ 연결 실패: ' + result.description,
-    env.COOLDOWN ? '✅ 중복 방지 저장소(COOLDOWN) 연결됨' : '⚠️ 중복 방지 저장소(COOLDOWN)가 연결되지 않았어요.',
+    env.COOLDOWN ? '✅ 요청 건수 저장소(COOLDOWN) 연결됨' : '⚠️ 요청 건수 저장소(COOLDOWN)가 연결되지 않았어요. (요청마다 새 알림이 갑니다)',
     !/^-?\d+$/.test(MANAGER_CHAT_ID) ? '⚠️ MANAGER_CHAT_ID 를 아직 입력하지 않았어요.' : '✅ 담당자 채팅 ID 입력됨',
     '',
     '연결 주소: ' + (info.result && info.result.url),
