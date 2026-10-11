@@ -105,10 +105,24 @@ async function handleButton(query, env) {
   }
 
   const type = TYPES[parts[2]];
-  if (parts[0] !== 'type' || !type) return answer();
+  if (!type) return answer();
+  const key = `request:${parts[1]}:${parts[2]}`;
+
+  // 담당자가 알림의 [처리 완료]를 누르면 표시를 바꾸고, 다음 요청부터 새 알림이 가게 한다.
+  if (parts[0] === 'done') {
+    const saved = env.COOLDOWN ? await env.COOLDOWN.get(key, 'json') : null;
+    await Promise.all([
+      answer({ text: '처리 완료로 표시했어요.' }),
+      edit(`${query.message.text}\n\n✅ 처리 완료 · ${formatTime(Date.now())}`),
+      // 이 메시지보다 나중에 온 알림의 기록은 지우지 않는다.
+      saved && saved.messageId === messageId && env.COOLDOWN.delete(key),
+    ]);
+    return;
+  }
+  if (parts[0] !== 'type') return answer();
 
   const managerChatId = ZONE_MANAGERS[zone] || MANAGER_CHAT_ID;
-  const key = `request:${parts[1]}:${parts[2]}`;
+  const doneButton = { inline_keyboard: [[button('✅ 처리 완료', `done|${parts[1]}|${parts[2]}`)]] };
   const now = Date.now();
   const windowMs = MERGE_MINUTES * 60 * 1000;
   const saved = env.COOLDOWN ? await env.COOLDOWN.get(key, 'json') : null;
@@ -122,6 +136,7 @@ async function handleButton(query, env) {
     const [updated] = await Promise.all([
       tg(env, 'editMessageText', {
         chat_id: record.chatId, message_id: record.messageId, text: managerMessage(zone, type, record),
+        reply_markup: doneButton,
       }),
       answer(),
       edit(`✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${record.count}건)`),
@@ -133,7 +148,9 @@ async function handleButton(query, env) {
   // 전송이 성공한다고 보고 완료 화면까지 함께 보낸 뒤, 실패했을 때만 화면을 고친다.
   const record = { chatId: managerChatId, count: 1, first: now, last: now };
   const [sent] = await Promise.all([
-    tg(env, 'sendMessage', { chat_id: managerChatId, text: managerMessage(zone, type, record) }),
+    tg(env, 'sendMessage', {
+      chat_id: managerChatId, text: managerMessage(zone, type, record), reply_markup: doneButton,
+    }),
     answer(),
     edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.`),
   ]);
