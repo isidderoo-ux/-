@@ -1,0 +1,19 @@
+{
+  "title": "에어컨 요청",
+  "timezone": "Asia/Seoul",
+  "cooldownSeconds": 120,
+  "zones": [
+    { "id": "Z1", "name": "1구역", "group": "grid" },
+    { "id": "Z2", "name": "2구역", "group": "grid" },
+    { "id": "Z3", "name": "3구역", "group": "grid" },
+    { "id": "Z4", "name": "4구역", "group": "grid" },
+    { "id": "Z5", "name": "5구역", "group": "grid" },
+    { "id": "Z6", "name": "6구역", "group": "grid" },
+    { "id": "Z7", "name": "7구역", "group": "grid" },
+    { "id": "Z8", "name": "8구역", "group": "grid" },
+    { "id": "Z9", "name": "9구역", "group": "grid" },
+    { "id": "X1", "name": "회의실", "group": "extra" },
+    { "id": "X2", "name": "휴게실", "group": "extra" },
+    { "id": "X3", "name": "탕비실", "group": "extra" }
+  ]
+}

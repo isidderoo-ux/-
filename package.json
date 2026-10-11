@@ -1,0 +1,13 @@
+{
+  "name": "ac-request-bot",
+  "version": "1.0.0",
+  "description": "구역별 에어컨 추워요/더워요 요청을 담당자에게 알려주는 봇",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
