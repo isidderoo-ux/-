@@ -13,6 +13,9 @@ const MANAGER_CHAT_ID = '-5453679069';
 // 시간이 지나 또 요청이 오면 새 알림이 갑니다.
 const MERGE_MINUTES = 10;
 
+// [처리 완료]를 이 시간(시간) 안에 누르지 않으면 "처리됐어요" 알림 대상 기록을 지웁니다.
+const NOTIFY_HOURS = 12;
+
 // 3×3 큰 구역 (위에서부터 3개씩 한 줄)
 const GRID_ZONES = [
   '1구역', '2구역', '3구역',
@@ -28,14 +31,15 @@ const ZONE_MANAGERS = {};
 
 // ----- 2. 아래는 수정하지 않아도 됩니다 ---------------------------------
 //
-// 개인정보: 텔레그램이 보내는 이름·아이디는 처리 중에만 메모리에 있고 저장하거나 전달하지 않습니다.
-// 저장하는 것은 구역별 요청 건수와 시각, 담당자 메시지 번호뿐이며 MERGE_MINUTES 가 지나면 지워집니다.
+// 개인정보: 이름·아이디는 저장하지 않고 담당자에게도 보내지 않습니다.
+// "처리됐어요" 알림을 보내기 위해 요청한 사람의 채팅 번호만 저장하며,
+// [처리 완료]를 누르면 알림을 보낸 즉시 지우고, 누르지 않아도 NOTIFY_HOURS 가 지나면 지워집니다.
 
 const ALL_ZONES = GRID_ZONES.concat(EXTRA_ZONES);
 
 const TYPES = {
-  cold: { label: '추워요', emoji: '🥶', action: '온도를 올리거나 바람을 약하게 해주세요' },
-  hot: { label: '더워요', emoji: '🥵', action: '온도를 내리거나 바람을 세게 해주세요' },
+  cold: { label: '추워요', emoji: '🥶', action: '온도를 올리거나 바람을 약하게 해주세요', still: '계속 추우시면' },
+  hot: { label: '더워요', emoji: '🥵', action: '온도를 내리거나 바람을 세게 해주세요', still: '계속 더우시면' },
 };
 
 export default {
@@ -106,16 +110,28 @@ async function handleButton(query, env) {
 
   const type = TYPES[parts[2]];
   if (!type) return answer();
-  const key = `request:${parts[1]}:${parts[2]}`;
+  const kv = env.COOLDOWN;
+  const requestKey = `request:${parts[1]}:${parts[2]}`; // 지금 건수를 모으는 중인 알림
+  const now = Date.now();
+  const put = (key, value, seconds) => kv && kv
+    .put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(seconds)) })
+    .catch((err) => console.error('KV 저장 실패: ' + err));
 
-  // 담당자가 알림의 [처리 완료]를 누르면 표시를 바꾸고, 다음 요청부터 새 알림이 가게 한다.
+  // 담당자가 알림의 [처리 완료]를 누르면 요청한 사람들에게 알리고, 저장해 둔 채팅 번호를 지운다.
   if (parts[0] === 'done') {
-    const saved = env.COOLDOWN ? await env.COOLDOWN.get(key, 'json') : null;
+    const alertKey = `alert:${chatId}:${messageId}`;
+    const [alert, active] = kv ? await Promise.all([kv.get(alertKey, 'json'), kv.get(requestKey, 'json')]) : [];
+    const requesters = alert ? alert.requesters : [];
     await Promise.all([
       answer({ text: '처리 완료로 표시했어요.' }),
-      edit(`${query.message.text}\n\n✅ 처리 완료 · ${formatTime(Date.now())}`),
-      // 이 메시지보다 나중에 온 알림의 기록은 지우지 않는다.
-      saved && saved.messageId === messageId && env.COOLDOWN.delete(key),
+      edit(`${query.message.text}\n\n✅ 처리 완료 · ${formatTime(now)}`
+        + (requesters.length ? ` · 요청자 ${requesters.length}명에게 알림` : '')),
+      ...requesters.map((id) => tg(env, 'sendMessage', {
+        chat_id: id, text: `✅ ${zone} "${type.label}" 요청을 담당자가 처리했어요.\n${type.still} 다시 요청해 주세요.`,
+      })),
+      alert && kv.delete(alertKey),
+      // 다음 요청부터 새 알림이 가게 한다. 이 메시지보다 나중에 온 알림이면 그대로 둔다.
+      active && active.messageId === messageId && String(active.chatId) === String(chatId) && kv.delete(requestKey),
     ]);
     return;
   }
@@ -123,41 +139,49 @@ async function handleButton(query, env) {
 
   const managerChatId = ZONE_MANAGERS[zone] || MANAGER_CHAT_ID;
   const doneButton = { inline_keyboard: [[button('✅ 처리 완료', `done|${parts[1]}|${parts[2]}`)]] };
-  const now = Date.now();
   const windowMs = MERGE_MINUTES * 60 * 1000;
-  const saved = env.COOLDOWN ? await env.COOLDOWN.get(key, 'json') : null;
-  const save = (record) => env.COOLDOWN && env.COOLDOWN
-    .put(key, JSON.stringify(record), { expirationTtl: Math.max(60, Math.ceil((record.first + windowMs - now) / 1000)) })
-    .catch((err) => console.error('KV 저장 실패: ' + err));
+  const active = kv ? await kv.get(requestKey, 'json') : null;
 
   // 이미 알림이 간 요청이면 새 알림 대신 그 메시지의 건수를 올린다.
-  if (saved && now - saved.first < windowMs) {
-    const record = { ...saved, count: saved.count + 1, last: now };
+  if (active && now - active.first < windowMs) {
+    const alertKey = `alert:${active.chatId}:${active.messageId}`;
+    const alert = (await kv.get(alertKey, 'json')) || { count: 1, first: active.first, last: active.first, requesters: [] };
+    if (alert.requesters.includes(chatId)) {
+      return Promise.all([
+        answer(),
+        edit(`✅ 이미 요청하셨어요. 담당자가 확인 중입니다.\n(${zone} "${type.label}" 현재 ${alert.count}건)`),
+      ]);
+    }
+    const next = { ...alert, count: alert.count + 1, last: now, requesters: alert.requesters.concat(chatId) };
     const [updated] = await Promise.all([
       tg(env, 'editMessageText', {
-        chat_id: record.chatId, message_id: record.messageId, text: managerMessage(zone, type, record),
+        chat_id: active.chatId, message_id: active.messageId, text: managerMessage(zone, type, next),
         reply_markup: doneButton,
       }),
       answer(),
-      edit(`✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${record.count}건)`),
+      edit(`✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${next.count}건)\n처리되면 알려드릴게요.`),
     ]);
-    if (updated.ok) return save(record);
+    if (updated.ok) return put(alertKey, next, NOTIFY_HOURS * 3600);
     // 담당자 메시지가 지워졌으면 아래에서 새 알림으로 보낸다.
   }
 
   // 전송이 성공한다고 보고 완료 화면까지 함께 보낸 뒤, 실패했을 때만 화면을 고친다.
-  const record = { chatId: managerChatId, count: 1, first: now, last: now };
+  const alert = { count: 1, first: now, last: now, requesters: [chatId] };
   const [sent] = await Promise.all([
     tg(env, 'sendMessage', {
-      chat_id: managerChatId, text: managerMessage(zone, type, record), reply_markup: doneButton,
+      chat_id: managerChatId, text: managerMessage(zone, type, alert), reply_markup: doneButton,
     }),
     answer(),
-    edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.`),
+    edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.\n처리되면 알려드릴게요.`),
   ]);
   if (!sent.ok) {
     return edit('⚠️ 담당자에게 전송하지 못했어요. 다시 눌러주세요.', typeKeyboard(parts[1]));
   }
-  await save({ ...record, messageId: sent.result.message_id });
+  const sentId = sent.result.message_id;
+  await Promise.all([
+    put(requestKey, { chatId: managerChatId, messageId: sentId, first: now }, windowMs / 1000),
+    put(`alert:${managerChatId}:${sentId}`, alert, NOTIFY_HOURS * 3600),
+  ]);
 }
 
 function managerMessage(zone, type, record) {
