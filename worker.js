@@ -68,20 +68,29 @@ async function handleUpdate(update, env) {
 
 async function handleMessage(msg, env) {
   const text = (msg.text || '').trim();
+  const chatId = msg.chat.id;
   if (/^\/id\b/.test(text)) {
-    return tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '이 채팅의 ID: ' + msg.chat.id });
+    return tg(env, 'sendMessage', { chat_id: chatId, text: '이 채팅의 ID: ' + chatId });
   }
   // 담당자 단톡방 등 그룹에서는 메뉴를 띄우지 않는다.
   if (msg.chat.type !== 'private') return;
 
-  // 아래쪽 고정 키보드의 구역 버튼을 누르면 구역 이름이 메시지로 온다.
+  // 아래쪽 고정 키보드의 버튼을 누르면 버튼 글자가 메시지로 온다.
   const zoneIndex = ALL_ZONES.indexOf(text);
   if (zoneIndex >= 0) {
     return tg(env, 'sendMessage', {
-      chat_id: msg.chat.id, text: '📍 ' + text + '\n어떠세요?', reply_markup: typeKeyboard(zoneIndex),
+      chat_id: chatId, text: `📍 ${text}\n아래에서 추워요/더워요를 눌러주세요.`, reply_markup: typeReplyKeyboard(zoneIndex),
     });
   }
-  await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: zoneMenuText(), reply_markup: zoneKeyboard() });
+  const choice = parseTypeButton(text);
+  if (choice) {
+    const result = await submitRequest(env, chatId, choice.zoneIndex, choice.typeKey);
+    return tg(env, 'sendMessage', {
+      chat_id: chatId, text: result.text,
+      reply_markup: result.ok ? zoneKeyboard() : typeReplyKeyboard(choice.zoneIndex),
+    });
+  }
+  await tg(env, 'sendMessage', { chat_id: chatId, text: zoneMenuText(), reply_markup: zoneKeyboard() });
 }
 
 async function handleButton(query, env) {
@@ -92,7 +101,7 @@ async function handleButton(query, env) {
   const edit = (text, keyboard) =>
     tg(env, 'editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: keyboard });
 
-  // 'menu', 'zone' 은 고정 키보드 도입 전에 보낸 메시지의 버튼이다.
+  // 'menu', 'zone', 'type' 은 아래쪽 키보드 도입 전에 보낸 메시지의 버튼이다.
   if (parts[0] === 'menu') {
     return Promise.all([
       answer(),
@@ -110,21 +119,22 @@ async function handleButton(query, env) {
 
   const type = TYPES[parts[2]];
   if (!type) return answer();
-  const kv = env.COOLDOWN;
-  const requestKey = `request:${parts[1]}:${parts[2]}`; // 지금 건수를 모으는 중인 알림
-  const now = Date.now();
-  const put = (key, value, seconds) => kv && kv
-    .put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(seconds)) })
-    .catch((err) => console.error('KV 저장 실패: ' + err));
+
+  if (parts[0] === 'type') {
+    const result = await submitRequest(env, chatId, Number(parts[1]), parts[2]);
+    return Promise.all([answer(), edit(result.text, result.ok ? undefined : typeKeyboard(parts[1]))]);
+  }
 
   // 담당자가 알림의 [처리 완료]를 누르면 요청한 사람들에게 알리고, 저장해 둔 채팅 번호를 지운다.
   if (parts[0] === 'done') {
+    const kv = env.COOLDOWN;
+    const requestKey = `request:${parts[1]}:${parts[2]}`;
     const alertKey = `alert:${chatId}:${messageId}`;
     const [alert, active] = kv ? await Promise.all([kv.get(alertKey, 'json'), kv.get(requestKey, 'json')]) : [];
     const requesters = alert ? alert.requesters : [];
     await Promise.all([
       answer({ text: '처리 완료로 표시했어요.' }),
-      edit(`${query.message.text}\n\n✅ 처리 완료 · ${formatTime(now)}`
+      edit(`${query.message.text}\n\n✅ 처리 완료 · ${formatTime(Date.now())}`
         + (requesters.length ? ` · 요청자 ${requesters.length}명에게 알림` : '')),
       ...requesters.map((id) => tg(env, 'sendMessage', {
         chat_id: id, text: `✅ ${zone} "${type.label}" 요청을 담당자가 처리했어요.\n${type.still} 다시 요청해 주세요.`,
@@ -135,10 +145,21 @@ async function handleButton(query, env) {
     ]);
     return;
   }
-  if (parts[0] !== 'type') return answer();
+  return answer();
+}
 
+/** 담당자에게 알리고(또는 기존 알림의 건수를 올리고) 요청한 사람에게 보여줄 문구를 돌려준다. */
+async function submitRequest(env, requesterId, zoneIndex, typeKey) {
+  const zone = ALL_ZONES[zoneIndex];
+  const type = TYPES[typeKey];
+  const kv = env.COOLDOWN;
+  const requestKey = `request:${zoneIndex}:${typeKey}`; // 지금 건수를 모으는 중인 알림
+  const now = Date.now();
+  const put = (key, value, seconds) => kv && kv
+    .put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(seconds)) })
+    .catch((err) => console.error('KV 저장 실패: ' + err));
   const managerChatId = ZONE_MANAGERS[zone] || MANAGER_CHAT_ID;
-  const doneButton = { inline_keyboard: [[button('✅ 처리 완료', `done|${parts[1]}|${parts[2]}`)]] };
+  const doneButton = { inline_keyboard: [[button('✅ 처리 완료', `done|${zoneIndex}|${typeKey}`)]] };
   const windowMs = MERGE_MINUTES * 60 * 1000;
   const active = kv ? await kv.get(requestKey, 'json') : null;
 
@@ -146,42 +167,36 @@ async function handleButton(query, env) {
   if (active && now - active.first < windowMs) {
     const alertKey = `alert:${active.chatId}:${active.messageId}`;
     const alert = (await kv.get(alertKey, 'json')) || { count: 1, first: active.first, last: active.first, requesters: [] };
-    if (alert.requesters.includes(chatId)) {
-      return Promise.all([
-        answer(),
-        edit(`✅ 이미 요청하셨어요. 담당자가 확인 중입니다.\n(${zone} "${type.label}" 현재 ${alert.count}건)`),
-      ]);
+    if (alert.requesters.includes(requesterId)) {
+      return { ok: true, text: `✅ 이미 요청하셨어요. 담당자가 확인 중입니다.\n(${zone} "${type.label}" 현재 ${alert.count}건)` };
     }
-    const next = { ...alert, count: alert.count + 1, last: now, requesters: alert.requesters.concat(chatId) };
-    const [updated] = await Promise.all([
-      tg(env, 'editMessageText', {
-        chat_id: active.chatId, message_id: active.messageId, text: managerMessage(zone, type, next),
-        reply_markup: doneButton,
-      }),
-      answer(),
-      edit(`✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${next.count}건)\n처리되면 알려드릴게요.`),
-    ]);
-    if (updated.ok) return put(alertKey, next, NOTIFY_HOURS * 3600);
+    const next = { ...alert, count: alert.count + 1, last: now, requesters: alert.requesters.concat(requesterId) };
+    const updated = await tg(env, 'editMessageText', {
+      chat_id: active.chatId, message_id: active.messageId, text: managerMessage(zone, type, next),
+      reply_markup: doneButton,
+    });
+    if (updated.ok) {
+      await put(alertKey, next, NOTIFY_HOURS * 3600);
+      return {
+        ok: true,
+        text: `✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${next.count}건)\n처리되면 알려드릴게요.`,
+      };
+    }
     // 담당자 메시지가 지워졌으면 아래에서 새 알림으로 보낸다.
   }
 
-  // 전송이 성공한다고 보고 완료 화면까지 함께 보낸 뒤, 실패했을 때만 화면을 고친다.
-  const alert = { count: 1, first: now, last: now, requesters: [chatId] };
-  const [sent] = await Promise.all([
-    tg(env, 'sendMessage', {
-      chat_id: managerChatId, text: managerMessage(zone, type, alert), reply_markup: doneButton,
-    }),
-    answer(),
-    edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.\n처리되면 알려드릴게요.`),
-  ]);
-  if (!sent.ok) {
-    return edit('⚠️ 담당자에게 전송하지 못했어요. 다시 눌러주세요.', typeKeyboard(parts[1]));
-  }
+  const alert = { count: 1, first: now, last: now, requesters: [requesterId] };
+  const sent = await tg(env, 'sendMessage', {
+    chat_id: managerChatId, text: managerMessage(zone, type, alert), reply_markup: doneButton,
+  });
+  if (!sent.ok) return { ok: false, text: '⚠️ 담당자에게 전송하지 못했어요. 다시 눌러주세요.' };
+
   const sentId = sent.result.message_id;
   await Promise.all([
     put(requestKey, { chatId: managerChatId, messageId: sentId, first: now }, windowMs / 1000),
     put(`alert:${managerChatId}:${sentId}`, alert, NOTIFY_HOURS * 3600),
   ]);
+  return { ok: true, text: `✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.\n처리되면 알려드릴게요.` };
 }
 
 function managerMessage(zone, type, record) {
@@ -213,6 +228,36 @@ function zoneKeyboard() {
     is_persistent: true,
     resize_keyboard: true,
     input_field_placeholder: '위치를 눌러주세요',
+  };
+}
+
+const BACK_TEXT = '↩ 위치 다시 선택';
+
+function typeButtonText(zoneIndex, typeKey) {
+  const type = TYPES[typeKey];
+  return `${type.emoji} ${ALL_ZONES[zoneIndex]} ${type.label}`;
+}
+
+// 버튼 글자에 구역이 들어 있어서, 누가 어느 구역을 골랐는지 따로 기억하지 않아도 된다.
+function parseTypeButton(text) {
+  for (let zoneIndex = 0; zoneIndex < ALL_ZONES.length; zoneIndex++) {
+    for (const typeKey of Object.keys(TYPES)) {
+      if (text === typeButtonText(zoneIndex, typeKey)) return { zoneIndex, typeKey };
+    }
+  }
+  return null;
+}
+
+// 구역을 고른 뒤 아래쪽 키보드 자리에 뜨는 추워요/더워요 버튼
+function typeReplyKeyboard(zoneIndex) {
+  return {
+    keyboard: [
+      [{ text: typeButtonText(zoneIndex, 'cold') }, { text: typeButtonText(zoneIndex, 'hot') }],
+      [{ text: BACK_TEXT }],
+    ],
+    is_persistent: true,
+    resize_keyboard: true,
+    input_field_placeholder: '추워요/더워요를 눌러주세요',
   };
 }
 
