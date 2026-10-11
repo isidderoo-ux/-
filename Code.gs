@@ -65,55 +65,56 @@ function handleMessage(msg) {
   tg('sendMessage', { chat_id: msg.chat.id, text: zoneMenuText(), reply_markup: zoneMenuKeyboard() });
 }
 
+// 버튼 처리는 텔레그램 호출 여러 개를 한 번에 동시에 보내서 응답 시간을 줄인다.
 function handleButton(query) {
   const chatId = query.message.chat.id;
   const messageId = query.message.message_id;
   const parts = String(query.data).split('|');
+  const answer = function (extra) {
+    return ['answerCallbackQuery', Object.assign({ callback_query_id: query.id }, extra)];
+  };
+  const edit = function (text, keyboard) {
+    return ['editMessageText', { chat_id: chatId, message_id: messageId, text: text, reply_markup: keyboard }];
+  };
 
   if (parts[0] === 'menu') {
-    editMessage(chatId, messageId, zoneMenuText(), zoneMenuKeyboard());
-    return tg('answerCallbackQuery', { callback_query_id: query.id });
+    return tgAll([answer(), edit(zoneMenuText(), zoneMenuKeyboard())]);
   }
 
   const zone = ALL_ZONES[Number(parts[1])];
-  if (!zone) return tg('answerCallbackQuery', { callback_query_id: query.id });
+  if (!zone) return tgAll([answer()]);
 
   if (parts[0] === 'zone') {
-    editMessage(chatId, messageId, '📍 ' + zone + '\n어떠세요?', {
+    return tgAll([answer(), edit('📍 ' + zone + '\n어떠세요?', {
       inline_keyboard: [
         [button('🥶 추워요', 'type|' + parts[1] + '|cold'), button('🥵 더워요', 'type|' + parts[1] + '|hot')],
         [button('↩ 위치 다시 선택', 'menu')],
       ],
-    });
-    return tg('answerCallbackQuery', { callback_query_id: query.id });
+    })]);
   }
 
   const type = TYPES[parts[2]];
-  if (parts[0] !== 'type' || !type) return tg('answerCallbackQuery', { callback_query_id: query.id });
+  if (parts[0] !== 'type' || !type) return tgAll([answer()]);
 
   const cooldownKey = 'cooldown:' + parts[1] + ':' + parts[2];
   if (!claimOnce(cooldownKey, COOLDOWN_SECONDS)) {
-    return tg('answerCallbackQuery', {
-      callback_query_id: query.id,
-      text: zone + '의 같은 요청이 방금 접수됐어요. 담당자가 확인 중입니다.',
-      show_alert: true,
-    });
+    return tgAll([answer({ text: zone + '의 같은 요청이 방금 접수됐어요. 담당자가 확인 중입니다.', show_alert: true })]);
   }
 
-  const sent = tg('sendMessage', { chat_id: ZONE_MANAGERS[zone] || MANAGER_CHAT_ID, text: managerMessage(zone, type) });
-  if (!sent.ok) {
+  // 전송이 성공한다고 보고 완료 화면까지 함께 보낸 뒤, 실패했을 때만 화면을 고친다.
+  const results = tgAll([
+    ['sendMessage', { chat_id: ZONE_MANAGERS[zone] || MANAGER_CHAT_ID, text: managerMessage(zone, type) }],
+    answer(),
+    edit('✅ ' + zone + ' "' + type.label + '" 요청을 담당자에게 전달했어요.', {
+      inline_keyboard: [[button('다시 요청하기', 'menu')]],
+    }),
+  ]);
+  if (!results[0].ok) {
     CacheService.getScriptCache().remove(cooldownKey);
-    return tg('answerCallbackQuery', {
-      callback_query_id: query.id,
-      text: '담당자에게 전송하지 못했어요. 잠시 후 다시 눌러주세요.',
-      show_alert: true,
-    });
+    tgAll([edit('⚠️ 담당자에게 전송하지 못했어요. 잠시 후 다시 시도해 주세요.', {
+      inline_keyboard: [[button('다시 요청하기', 'menu')]],
+    })]);
   }
-
-  editMessage(chatId, messageId, '✅ ' + zone + ' "' + type.label + '" 요청을 담당자에게 전달했어요.', {
-    inline_keyboard: [[button('다시 요청하기', 'menu')]],
-  });
-  tg('answerCallbackQuery', { callback_query_id: query.id, text: '전달했어요!' });
 }
 
 function managerMessage(zone, type) {
@@ -140,10 +141,6 @@ function button(text, data) {
   return { text: text, callback_data: data };
 }
 
-function editMessage(chatId, messageId, text, keyboard) {
-  tg('editMessageText', { chat_id: chatId, message_id: messageId, text: text, reply_markup: keyboard });
-}
-
 /** key 를 처음 보면 true, seconds 안에 이미 본 key 면 false. */
 function claimOnce(key, seconds) {
   const lock = LockService.getScriptLock();
@@ -168,6 +165,24 @@ function tg(method, body) {
   const result = JSON.parse(res.getContentText());
   if (!result.ok) console.error(method + ' 실패: ' + res.getContentText());
   return result;
+}
+
+/** [메서드, 내용] 목록을 동시에 보내고 결과를 같은 순서로 돌려준다. */
+function tgAll(calls) {
+  const responses = UrlFetchApp.fetchAll(calls.map(function (call) {
+    return {
+      url: 'https://api.telegram.org/bot' + BOT_TOKEN + '/' + call[0],
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify(call[1]),
+      muteHttpExceptions: true,
+    };
+  }));
+  return responses.map(function (res, i) {
+    const result = JSON.parse(res.getContentText());
+    if (!result.ok) console.error(calls[i][0] + ' 실패: ' + res.getContentText());
+    return result;
+  });
 }
 
 function ok() {
