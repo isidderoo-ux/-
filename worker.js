@@ -13,6 +13,10 @@ const MANAGER_CHAT_ID = '-5453679069';
 // 시간이 지나 또 요청이 오면 새 알림이 갑니다.
 const MERGE_MINUTES = 10;
 
+// 한 사람이 요청한 뒤 이 시간(분) 동안은 어느 구역이든 다시 요청할 수 없습니다. (0이면 제한 없음)
+// 담당자가 [처리 완료]를 누르면 그 요청을 한 사람들은 바로 다시 요청할 수 있습니다.
+const USER_COOLDOWN_MINUTES = 10;
+
 // [처리 완료]를 이 시간(시간) 안에 누르지 않으면 "처리됐어요" 알림 대상 기록을 지웁니다.
 const NOTIFY_HOURS = 12;
 
@@ -34,6 +38,7 @@ const ZONE_MANAGERS = {};
 // 개인정보: 이름·아이디는 저장하지 않고 담당자에게도 보내지 않습니다.
 // "처리됐어요" 알림을 보내기 위해 요청한 사람의 채팅 번호만 저장하며,
 // [처리 완료]를 누르면 알림을 보낸 즉시 지우고, 누르지 않아도 NOTIFY_HOURS 가 지나면 지워집니다.
+// 재요청 제한을 위한 기록(채팅 번호 + 마지막 요청 시각)은 USER_COOLDOWN_MINUTES 가 지나면 지워집니다.
 
 const ALL_ZONES = GRID_ZONES.concat(EXTRA_ZONES);
 
@@ -140,6 +145,7 @@ async function handleButton(query, env) {
         chat_id: id, text: `✅ ${zone} "${type.label}" 요청을 담당자가 처리했어요.\n${type.still} 다시 요청해 주세요.`,
       })),
       alert && kv.delete(alertKey),
+      ...requesters.map((id) => kv.delete(`user:${id}`)),
       // 다음 요청부터 새 알림이 가게 한다. 이 메시지보다 나중에 온 알림이면 그대로 둔다.
       active && active.messageId === messageId && String(active.chatId) === String(chatId) && kv.delete(requestKey),
     ]);
@@ -161,7 +167,20 @@ async function submitRequest(env, requesterId, zoneIndex, typeKey) {
   const managerChatId = ZONE_MANAGERS[zone] || MANAGER_CHAT_ID;
   const doneButton = { inline_keyboard: [[button('✅ 처리 완료', `done|${zoneIndex}|${typeKey}`)]] };
   const windowMs = MERGE_MINUTES * 60 * 1000;
-  const active = kv ? await kv.get(requestKey, 'json') : null;
+  const userKey = `user:${requesterId}`;
+  const userCooldownMs = USER_COOLDOWN_MINUTES * 60 * 1000;
+  const [active, lastRequest] = kv
+    ? await Promise.all([kv.get(requestKey, 'json'), userCooldownMs ? kv.get(userKey, 'json') : null])
+    : [];
+
+  if (lastRequest && now - lastRequest.at < userCooldownMs) {
+    const minutes = Math.ceil((userCooldownMs - (now - lastRequest.at)) / 60000);
+    return {
+      ok: true,
+      text: `⏳ 이미 요청하셨어요. ${minutes}분 후에 다시 요청할 수 있어요.\n(마지막 요청: ${lastRequest.zone} "${lastRequest.label}" · 담당자가 처리하면 알려드려요)`,
+    };
+  }
+  const rememberUser = () => userCooldownMs && put(userKey, { at: now, zone, label: type.label }, userCooldownMs / 1000);
 
   // 이미 알림이 간 요청이면 새 알림 대신 그 메시지의 건수를 올린다.
   if (active && now - active.first < windowMs) {
@@ -176,7 +195,7 @@ async function submitRequest(env, requesterId, zoneIndex, typeKey) {
       reply_markup: doneButton,
     });
     if (updated.ok) {
-      await put(alertKey, next, NOTIFY_HOURS * 3600);
+      await Promise.all([put(alertKey, next, NOTIFY_HOURS * 3600), rememberUser()]);
       return {
         ok: true,
         text: `✅ 이미 ${zone} "${type.label}" 요청이 접수돼 있어요.\n추가 요청으로 반영했어요. (현재 ${next.count}건)\n처리되면 알려드릴게요.`,
@@ -195,6 +214,7 @@ async function submitRequest(env, requesterId, zoneIndex, typeKey) {
   await Promise.all([
     put(requestKey, { chatId: managerChatId, messageId: sentId, first: now }, windowMs / 1000),
     put(`alert:${managerChatId}:${sentId}`, alert, NOTIFY_HOURS * 3600),
+    rememberUser(),
   ]);
   return { ok: true, text: `✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.\n처리되면 알려드릴게요.` };
 }
