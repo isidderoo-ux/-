@@ -62,14 +62,21 @@ async function handleUpdate(update, env) {
 }
 
 async function handleMessage(msg, env) {
-  const text = msg.text || '';
+  const text = (msg.text || '').trim();
   if (/^\/id\b/.test(text)) {
     return tg(env, 'sendMessage', { chat_id: msg.chat.id, text: '이 채팅의 ID: ' + msg.chat.id });
   }
   // 담당자 단톡방 등 그룹에서는 메뉴를 띄우지 않는다.
   if (msg.chat.type !== 'private') return;
 
-  await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: zoneMenuText(), reply_markup: zoneMenuKeyboard() });
+  // 아래쪽 고정 키보드의 구역 버튼을 누르면 구역 이름이 메시지로 온다.
+  const zoneIndex = ALL_ZONES.indexOf(text);
+  if (zoneIndex >= 0) {
+    return tg(env, 'sendMessage', {
+      chat_id: msg.chat.id, text: '📍 ' + text + '\n어떠세요?', reply_markup: typeKeyboard(zoneIndex),
+    });
+  }
+  await tg(env, 'sendMessage', { chat_id: msg.chat.id, text: zoneMenuText(), reply_markup: zoneKeyboard() });
 }
 
 async function handleButton(query, env) {
@@ -80,20 +87,20 @@ async function handleButton(query, env) {
   const edit = (text, keyboard) =>
     tg(env, 'editMessageText', { chat_id: chatId, message_id: messageId, text, reply_markup: keyboard });
 
+  // 'menu', 'zone' 은 고정 키보드 도입 전에 보낸 메시지의 버튼이다.
   if (parts[0] === 'menu') {
-    return Promise.all([answer(), edit(zoneMenuText(), zoneMenuKeyboard())]);
+    return Promise.all([
+      answer(),
+      edit(zoneMenuText()),
+      tg(env, 'sendMessage', { chat_id: chatId, text: zoneMenuText(), reply_markup: zoneKeyboard() }),
+    ]);
   }
 
   const zone = ALL_ZONES[Number(parts[1])];
   if (!zone) return answer();
 
   if (parts[0] === 'zone') {
-    return Promise.all([answer(), edit('📍 ' + zone + '\n어떠세요?', {
-      inline_keyboard: [
-        [button('🥶 추워요', `type|${parts[1]}|cold`), button('🥵 더워요', `type|${parts[1]}|hot`)],
-        [button('↩ 위치 다시 선택', 'menu')],
-      ],
-    })]);
+    return Promise.all([answer(), edit('📍 ' + zone + '\n어떠세요?', typeKeyboard(parts[1]))]);
   }
 
   const type = TYPES[parts[2]];
@@ -108,14 +115,10 @@ async function handleButton(query, env) {
   const [sent] = await Promise.all([
     tg(env, 'sendMessage', { chat_id: ZONE_MANAGERS[zone] || MANAGER_CHAT_ID, text: managerMessage(zone, type) }),
     answer(),
-    edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.`, {
-      inline_keyboard: [[button('다시 요청하기', 'menu')]],
-    }),
+    edit(`✅ ${zone} "${type.label}" 요청을 담당자에게 전달했어요.`),
   ]);
   if (!sent.ok) {
-    return edit('⚠️ 담당자에게 전송하지 못했어요. 잠시 후 다시 시도해 주세요.', {
-      inline_keyboard: [[button('다시 요청하기', 'menu')]],
-    });
+    return edit('⚠️ 담당자에게 전송하지 못했어요. 다시 눌러주세요.', typeKeyboard(parts[1]));
   }
   if (env.COOLDOWN) {
     await env.COOLDOWN.put(cooldownKey, '1', { expirationTtl: Math.max(60, COOLDOWN_SECONDS) });
@@ -131,15 +134,26 @@ function managerMessage(zone, type) {
 }
 
 function zoneMenuText() {
-  return '📍 지금 계신 곳을 눌러주세요.';
+  return '📍 아래 버튼에서 지금 계신 곳을 눌러주세요.';
 }
 
-function zoneMenuKeyboard() {
-  const buttons = ALL_ZONES.map((name, i) => button(name, 'zone|' + i));
+// 채팅창 아래쪽(글자 키보드 자리)에 항상 떠 있는 구역 버튼
+function zoneKeyboard() {
   const rows = [];
-  for (let i = 0; i < GRID_ZONES.length; i += 3) rows.push(buttons.slice(i, i + 3));
-  for (let i = GRID_ZONES.length; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
-  return { inline_keyboard: rows };
+  for (let i = 0; i < GRID_ZONES.length; i += 3) rows.push(GRID_ZONES.slice(i, i + 3));
+  for (let i = 0; i < EXTRA_ZONES.length; i += 3) rows.push(EXTRA_ZONES.slice(i, i + 3));
+  return {
+    keyboard: rows.map((row) => row.map((text) => ({ text }))),
+    is_persistent: true,
+    resize_keyboard: true,
+    input_field_placeholder: '위치를 눌러주세요',
+  };
+}
+
+function typeKeyboard(zoneIndex) {
+  return {
+    inline_keyboard: [[button('🥶 추워요', `type|${zoneIndex}|cold`), button('🥵 더워요', `type|${zoneIndex}|hot`)]],
+  };
 }
 
 function button(text, data) {
@@ -173,7 +187,14 @@ async function setup(url, env) {
     allowed_updates: ['message', 'callback_query'],
     drop_pending_updates: true,
   });
-  await tg(env, 'setMyCommands', { commands: [{ command: 'start', description: '에어컨 요청하기' }] });
+  await Promise.all([
+    tg(env, 'setMyCommands', { commands: [{ command: 'start', description: '에어컨 요청하기' }] }),
+    // 봇을 처음 열었을 때 [시작] 버튼 위에 보이는 안내문
+    tg(env, 'setMyDescription', {
+      description: '📍 위치를 고르고 🥶 추워요 / 🥵 더워요를 누르면 담당자에게 바로 알려드려요.\n\n아래 [시작]을 눌러주세요.',
+    }),
+    tg(env, 'setMyShortDescription', { short_description: '에어컨 추워요/더워요 요청 봇' }),
+  ]);
   const info = await tg(env, 'getWebhookInfo', {});
 
   const lines = [
