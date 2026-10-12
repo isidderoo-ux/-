@@ -17,7 +17,9 @@ cd mac
 
 ## Windows
 
-PowerShell에서 실행합니다(NirCmd 같은 별도 프로그램 설치 불필요).
+**간편 사용(GUI):** `windows` 폴더의 `ScreenTimer.bat`을 더블클릭하면 설정 창이 열립니다. 시각을 고르고 **예약 저장**을 누르면 끝입니다.
+
+명령어로 쓰려면 PowerShell에서 실행합니다(NirCmd 같은 별도 프로그램 설치 불필요).
 
 ```powershell
 cd windows
