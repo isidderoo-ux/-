@@ -17,19 +17,20 @@ cd mac
 
 ## Windows
 
-**간편 사용(GUI):** `windows` 폴더의 `ScreenTimer.bat`을 더블클릭하면 설정 창이 열립니다. 시각을 고르고 **예약 저장**을 누르면 끝입니다.
+**간편 사용(GUI):** `windows` 폴더의 `ScreenTimer.bat`을 더블클릭하면 설정 창이 열립니다. 예약을 2개까지 만들 수 있고, 예약마다 끄기/켜기 시각과 요일을 고른 뒤 **저장**을 누르면 끝입니다. 켜기 시각이 끄기 시각보다 이르면(예: 23:00 끄기, 07:30 켜기) 다음 날 아침에 켭니다.
 
 명령어로 쓰려면 PowerShell에서 실행합니다(NirCmd 같은 별도 프로그램 설치 불필요).
 
 ```powershell
 cd windows
 powershell -ExecutionPolicy Bypass -File install.ps1 -Off 23:00 -On 07:30
+powershell -ExecutionPolicy Bypass -File install.ps1 -Slot 2 -Off 12:00 -On 13:00 -Days Saturday,Sunday
 powershell -ExecutionPolicy Bypass -File uninstall.ps1
 ```
 
 - 끄기: `SC_MONITORPOWER` 메시지로 모니터 끄기 (`screen_off.ps1`)
 - 켜기: 마우스를 1픽셀 움직였다 되돌려 화면 깨우기 (`screen_on.ps1`)
-- 작업 스케줄러에 `ScreenOff`, `ScreenOn` 작업으로 등록됩니다. 로그인한 사용자 세션에서만 동작합니다.
+- 작업 스케줄러에 `ScreenOff1`, `ScreenOn1` 같은 이름으로 등록됩니다. 로그인한 사용자 세션에서만 동작합니다.
 - 실행 순간 PowerShell 창이 아주 잠깐 깜빡일 수 있습니다.
 
 ## 주의
