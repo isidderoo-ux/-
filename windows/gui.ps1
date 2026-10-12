@@ -107,6 +107,7 @@ $testButton = New-Control Button 15 ($y + 42) 400 34
 $testButton.Text = "테스트: 끄고 5초 뒤 켜기"
 $status = New-Control Label 15 ($y + 86) 400 44
 $form.ClientSize = New-Object System.Drawing.Size(430, ($y + 135))
+$form.Controls.AddRange(@($saveButton, $deleteButton, $testButton, $status))
 
 $saveButton.Add_Click({
     try {
