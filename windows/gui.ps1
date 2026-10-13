@@ -85,7 +85,7 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
-$form.ClientSize = New-Object System.Drawing.Size(430, 687)
+$form.ClientSize = New-Object System.Drawing.Size(860, 495)
 
 # ── 새 예약 만들기 ──
 $newBox = New-Control GroupBox 15 10 400 222
@@ -129,45 +129,115 @@ $newBox.Controls.AddRange(@($orderPanel, $onLabel, $onPicker,
     $offLabel, $offPicker, (New-Label "끄는 시간에" 15 135),
     $messageRadio, $offRadio, $addButton) + $dayBoxes)
 
-# ── 안내 문구 설정 (settings.json 에 저장, message.ps1 이 읽음) ──
+# ── 안내 화면 설정 (settings.json 에 저장, message.ps1 이 읽음) ──
 $settingsPath = Join-Path $dir "settings.json"
-$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true }
+$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = "" }
 if (Test-Path $settingsPath) {
     try {
         $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($p in $saved.PSObject.Properties) { $settings.($p.Name) = $p.Value }
     } catch {}
 }
+$script:imageFile = "$($settings.Image)"
 
-$msgBox = New-Control GroupBox 15 242 400 180
-$msgBox.Text = "안내 문구"
-$msgText = New-Control TextBox 15 25 370 56
+# 이미지는 파일을 잠그지 않도록 메모리로 읽어 온다
+function Read-Image($path) {
+    $stream = New-Object System.IO.MemoryStream(, [System.IO.File]::ReadAllBytes($path))
+    $loaded = [System.Drawing.Image]::FromStream($stream)
+    $bitmap = New-Object System.Drawing.Bitmap($loaded)
+    $loaded.Dispose(); $stream.Dispose()
+    return $bitmap
+}
+
+function Save-Settings {
+    [pscustomobject]@{
+        Message = $msgText.Text.Trim(); Size = [int]$sizeInput.Value
+        ShowInfo = $showInfo.Checked; ShowMessage = $showMessage.Checked; Image = $script:imageFile
+    } | ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
+}
+
+function Update-ImagePreview {
+    if ($imagePreview.Image) { $imagePreview.Image.Dispose(); $imagePreview.Image = $null }
+    $path = if ($script:imageFile) { Join-Path $dir $script:imageFile }
+    if ($path -and (Test-Path $path)) {
+        $imagePreview.Image = Read-Image $path
+        $imageName.Text = "이미지 사용 중"
+        $removeImageButton.Enabled = $true
+    } else {
+        $imageName.Text = "이미지 없음 (검은 배경)"
+        $removeImageButton.Enabled = $false
+    }
+}
+
+$msgBox = New-Control GroupBox 430 10 415 470
+$msgBox.Text = "안내 화면"
+$showMessage = New-Control CheckBox 15 25 200 26
+$showMessage.Text = "문구 표시"
+$showMessage.Checked = [bool]$settings.ShowMessage
+$msgText = New-Control TextBox 15 55 385 56
 $msgText.Multiline = $true
 $msgText.Text = $settings.Message
-$sizeInput = New-Control NumericUpDown 95 92 65 28
+$sizeInput = New-Control NumericUpDown 95 122 65 28
 $sizeInput.Minimum = 30
 $sizeInput.Maximum = 300
 $sizeInput.Increment = 10
 $sizeInput.Value = [int]$settings.Size
-$showInfo = New-Control CheckBox 200 92 185 26
+$showInfo = New-Control CheckBox 200 122 200 26
 $showInfo.Text = "인증 시간 함께 표시"
 $showInfo.Checked = [bool]$settings.ShowInfo
-$previewButton = New-Control Button 15 130 370 34
+
+$chooseImageButton = New-Control Button 15 165 130 32
+$chooseImageButton.Text = "이미지 선택..."
+$removeImageButton = New-Control Button 150 165 90 32
+$removeImageButton.Text = "이미지 빼기"
+$imageName = New-Control Label 248 172 155 22
+$imagePreview = New-Control PictureBox 15 205 385 210
+$imagePreview.SizeMode = "Zoom"
+$imagePreview.BackColor = [System.Drawing.Color]::Black
+$previewButton = New-Control Button 15 425 385 34
 $previewButton.Text = "저장하고 미리보기 (8초)"
-$msgBox.Controls.AddRange(@($msgText, (New-Label "글자 크기" 15 92), $sizeInput,
-    (New-Label "%" 162 92), $showInfo, $previewButton))
+$msgBox.Controls.AddRange(@($showMessage, $msgText, (New-Label "글자 크기" 15 122), $sizeInput,
+    (New-Label "%" 162 122), $showInfo, $chooseImageButton, $removeImageButton, $imageName,
+    $imagePreview, $previewButton))
 
 # ── 저장된 예약 목록 ──
-$listLabel = New-Label "저장된 예약" 15 432
-$list = New-Control ListBox 15 460 400 130
-$deleteButton = New-Control Button 15 597 195 34
+$listLabel = New-Label "저장된 예약" 15 242
+$list = New-Control ListBox 15 270 400 132
+$deleteButton = New-Control Button 15 412 195 34
 $deleteButton.Text = "선택한 예약 삭제"
-$applyButton = New-Control Button 220 597 195 34
+$applyButton = New-Control Button 220 412 195 34
 $applyButton.Text = "지금 바로 적용"
-$testButton = New-Control Button 15 642 400 34
+$testButton = New-Control Button 15 452 400 28
 $testButton.Text = "모니터 끄기 테스트 (5초간 화면만 꺼짐, 문구 없음)"
 
 $form.Controls.AddRange(@($newBox, $msgBox, $listLabel, $list, $deleteButton, $applyButton, $testButton))
+
+$chooseImageButton.Add_Click({
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = "안내 화면에 띄울 이미지 선택"
+    $dialog.Filter = "이미지 파일|*.png;*.jpg;*.jpeg;*.bmp;*.gif"
+    if ($dialog.ShowDialog() -ne "OK") { return }
+    try {
+        # 원본을 옮기거나 지워도 괜찮도록 프로그램 폴더에 복사해 둔다
+        if ($imagePreview.Image) { $imagePreview.Image.Dispose(); $imagePreview.Image = $null }
+        Get-ChildItem $dir -Filter "message_image.*" | Remove-Item -Force
+        $script:imageFile = "message_image" + [System.IO.Path]::GetExtension($dialog.FileName).ToLower()
+        Copy-Item $dialog.FileName (Join-Path $dir $script:imageFile) -Force
+        Save-Settings
+    } catch {
+        $script:imageFile = ""
+        [System.Windows.Forms.MessageBox]::Show("이미지를 불러오지 못했습니다.`n`n$($_.Exception.Message)", "오류", "OK", "Error") | Out-Null
+    }
+    Update-ImagePreview
+})
+
+$removeImageButton.Add_Click({
+    if ($imagePreview.Image) { $imagePreview.Image.Dispose(); $imagePreview.Image = $null }
+    Get-ChildItem $dir -Filter "message_image.*" | Remove-Item -Force -ErrorAction SilentlyContinue
+    $script:imageFile = ""
+    Save-Settings
+    Update-ImagePreview
+})
 
 $addButton.Add_Click({
     $days = @(for ($d = 0; $d -lt 7; $d++) { if ($dayBoxes[$d].Checked) { $dayValues[$d] } })
@@ -223,12 +293,15 @@ $applyButton.Add_Click({
 })
 
 $previewButton.Add_Click({
-    if (-not $msgText.Text.Trim()) {
+    if ($showMessage.Checked -and -not $msgText.Text.Trim()) {
         [System.Windows.Forms.MessageBox]::Show("안내 문구를 입력하세요.", "알림") | Out-Null
         return
     }
-    [pscustomobject]@{ Message = $msgText.Text.Trim(); Size = [int]$sizeInput.Value; ShowInfo = $showInfo.Checked } |
-        ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
+    if (-not $showMessage.Checked -and -not $script:imageFile) {
+        [System.Windows.Forms.MessageBox]::Show("문구나 이미지 중 하나는 있어야 합니다.", "알림") | Out-Null
+        return
+    }
+    Save-Settings
     # 실제 예약과 같은 방식으로 실행한다
     Start-Process powershell.exe `
         -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
@@ -244,4 +317,5 @@ $testButton.Add_Click({
 })
 
 Update-List
+Update-ImagePreview
 [void]$form.ShowDialog()
