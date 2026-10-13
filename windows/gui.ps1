@@ -33,6 +33,7 @@ function Get-Schedules {
                 Days = Format-Days $mask
                 On   = ([datetime]$onTrigger.StartBoundary).ToString("HH:mm")
                 Off  = if ($offTask) { ([datetime]$offTask.Triggers[0].StartBoundary).ToString("HH:mm") } else { "--:--" }
+                Mode = if ($offTask -and $offTask.Actions[0].Arguments -like "*message.ps1*") { "안내 문구" } else { "끄기" }
             }
         } | Sort-Object On
 }
@@ -41,7 +42,7 @@ function Update-List {
     $script:schedules = @(Get-Schedules)
     $list.Items.Clear()
     foreach ($s in $script:schedules) {
-        [void]$list.Items.Add("$($s.Days)   $($s.On) 켜기  →  $($s.Off) 끄기")
+        [void]$list.Items.Add("$($s.Days)   $($s.On) 켜기  →  $($s.Off) $($s.Mode)")
     }
     if ($script:schedules.Count -eq 0) { [void]$list.Items.Add("(저장된 예약이 없습니다)") }
     $deleteButton.Enabled = $false
@@ -76,10 +77,10 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
-$form.ClientSize = New-Object System.Drawing.Size(430, 470)
+$form.ClientSize = New-Object System.Drawing.Size(430, 510)
 
 # ── 새 예약 만들기 ──
-$newBox = New-Control GroupBox 15 10 400 160
+$newBox = New-Control GroupBox 15 10 400 195
 $newBox.Text = "새 예약"
 $today = (Get-Date).Date
 $onPicker = New-TimePicker 60 28 $today.AddHours(9)
@@ -91,20 +92,28 @@ for ($d = 0; $d -lt 7; $d++) {
     $cb.Checked = $d -lt 5
     $dayBoxes += $cb
 }
-$addButton = New-Control Button 15 110 370 34
+$messageRadio = New-Control RadioButton 110 105 130 26
+$messageRadio.Text = "안내 문구 표시"
+$messageRadio.Checked = $true
+$offRadio = New-Control RadioButton 250 105 130 26
+$offRadio.Text = "모니터 끄기"
+$addButton = New-Control Button 15 145 370 34
 $addButton.Text = "+ 예약 추가"
 $newBox.Controls.AddRange(@((New-Label "켜기" 15 28), $onPicker,
-    (New-Label "끄기" 175 28), $offPicker, $addButton) + $dayBoxes)
+    (New-Label "끄기" 175 28), $offPicker, (New-Label "끄는 시간에" 15 105),
+    $messageRadio, $offRadio, $addButton) + $dayBoxes)
 
 # ── 저장된 예약 목록 ──
-$listLabel = New-Label "저장된 예약" 15 180
-$list = New-Control ListBox 15 208 400 150
-$deleteButton = New-Control Button 15 366 400 34
+$listLabel = New-Label "저장된 예약" 15 215
+$list = New-Control ListBox 15 243 400 150
+$deleteButton = New-Control Button 15 401 400 34
 $deleteButton.Text = "선택한 예약 삭제"
-$testButton = New-Control Button 15 420 400 34
-$testButton.Text = "테스트: 끄고 5초 뒤 켜기"
+$testMessageButton = New-Control Button 15 460 195 34
+$testMessageButton.Text = "테스트: 안내 문구 5초"
+$testButton = New-Control Button 220 460 195 34
+$testButton.Text = "테스트: 모니터 끄기 5초"
 
-$form.Controls.AddRange(@($newBox, $listLabel, $list, $deleteButton, $testButton))
+$form.Controls.AddRange(@($newBox, $listLabel, $list, $deleteButton, $testMessageButton, $testButton))
 
 $addButton.Add_Click({
     $days = @(for ($d = 0; $d -lt 7; $d++) { if ($dayBoxes[$d].Checked) { $dayValues[$d] } })
@@ -123,7 +132,8 @@ $addButton.Add_Click({
     $slot = 1
     while ($used -contains "$slot") { $slot++ }
     try {
-        & "$dir\install.ps1" -Slot $slot -Off $off -On $on -Days $days | Out-Null
+        $useMessage = $messageRadio.Checked
+        & "$dir\install.ps1" -Slot $slot -Off $off -On $on -Days $days -Message:$useMessage | Out-Null
         Update-List
     } catch {
         [System.Windows.Forms.MessageBox]::Show("추가하지 못했습니다.`n`n$($_.Exception.Message)", "오류", "OK", "Error") | Out-Null
@@ -143,6 +153,14 @@ $deleteButton.Add_Click({
         Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
     }
     Update-List
+})
+
+$testMessageButton.Add_Click({
+    Start-Process powershell.exe -WindowStyle Hidden `
+        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
+    $script = "Start-Sleep 5; & '$dir\screen_on.ps1'"
+    Start-Process powershell.exe -WindowStyle Hidden `
+        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $script
 })
 
 $testButton.Add_Click({

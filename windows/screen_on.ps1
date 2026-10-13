@@ -1,4 +1,9 @@
 ﻿# 모니터를 켠다 - 마우스를 1픽셀 움직였다가 되돌려서 화면을 깨운다
+# 안내 문구 화면(message.ps1)이 떠 있으면 먼저 닫는다
+Get-Process powershell -ErrorAction SilentlyContinue |
+    Where-Object { $_.MainWindowTitle -eq "ScreenTimerMessage" } |
+    Stop-Process -Force
+
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
