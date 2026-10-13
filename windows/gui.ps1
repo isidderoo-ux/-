@@ -158,6 +158,47 @@ function Save-Settings {
     } | ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
 }
 
+# 입력값을 확인하고 저장한다. 문제가 있으면 알려주고 $false 를 돌려준다.
+function Save-CheckedSettings {
+    if ($urlRadio.Checked) {
+        $url = $urlText.Text.Trim()
+        if (-not $url) {
+            [System.Windows.Forms.MessageBox]::Show("띄울 웹사이트 주소를 입력하세요.", "알림") | Out-Null
+            return $false
+        }
+        if ($url -notmatch '^https?://') { $urlText.Text = "https://$url" }
+    } elseif ($showMessage.Checked -and -not $msgText.Text.Trim()) {
+        [System.Windows.Forms.MessageBox]::Show("안내 문구를 입력하세요.", "알림") | Out-Null
+        return $false
+    } elseif (-not $showMessage.Checked -and -not $script:imageFile) {
+        [System.Windows.Forms.MessageBox]::Show("문구나 이미지 중 하나는 있어야 합니다.", "알림") | Out-Null
+        return $false
+    }
+    Save-Settings
+    return $true
+}
+
+# 예약이 다른 폴더(예: 예전에 쓰던 폴더)의 파일을 실행하고 있으면 이 폴더로 바꾼다
+function Sync-TaskFolder {
+    $tasks = @(Get-ScheduledTask -TaskName "Screen*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.TaskName -match '^Screen(On|Off)\d*$|^ScreenCheck$' })
+    $stale = @($tasks | Where-Object {
+        $_.Actions[0].Arguments -match '-File "(.+)\\[^\\]+\.ps1"' -and $Matches[1] -ne $dir })
+    if ($stale.Count -eq 0) { return }
+    $null = $stale[0].Actions[0].Arguments -match '-File "(.+)\\[^\\]+\.ps1"'
+    $oldDir = $Matches[1]
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        "저장된 예약이 다른 폴더의 파일을 실행하고 있습니다.`n`n예약이 쓰는 폴더: $oldDir`n지금 이 폴더: $dir`n`n예약이 이 폴더의 최신 파일을 쓰도록 바꿀까요?",
+        "예약 폴더 확인", "YesNo", "Question")
+    if ($answer -ne "Yes") { return }
+    foreach ($t in $stale) {
+        $null = $t.Actions[0].Arguments -match '-File "(.+)\\[^\\]+\.ps1"'
+        $newArgs = $t.Actions[0].Arguments.Replace("`"$($Matches[1])\", "`"$dir\")
+        $action = New-ScheduledTaskAction -Execute $t.Actions[0].Execute -Argument $newArgs
+        Set-ScheduledTask -TaskName $t.TaskName -Action $action | Out-Null
+    }
+}
+
 function Update-ImagePreview {
     if ($imagePreview.Image) { $imagePreview.Image.Dispose(); $imagePreview.Image = $null }
     $path = if ($script:imageFile) { Join-Path $dir $script:imageFile }
@@ -313,33 +354,20 @@ $deleteButton.Add_Click({
 
 # 예약을 기다리지 않고 지금 시각 기준으로 화면 상태를 맞춘다
 $applyButton.Add_Click({
+    # 화면에서 바꾼 안내 화면 설정을 먼저 저장해야 그대로 뜬다
+    if (-not (Save-CheckedSettings)) { return }
     $task = & "$dir\check.ps1" -DryRun
     if (-not $task) {
         [System.Windows.Forms.MessageBox]::Show("지금은 인증 시간이라 QR 화면을 그대로 둡니다.", "지금 바로 적용") | Out-Null
         return
     }
     [System.Windows.Forms.MessageBox]::Show(
-        "지금은 인증 시간이 아니므로 안내 문구를 띄웁니다.`n다음 켜기 시각에 자동으로 사라집니다.`n`n직접 닫으려면 Ctrl + Shift + Q", "지금 바로 적용") | Out-Null
+        "지금은 인증 시간이 아니므로 대기화면을 띄웁니다.`n다음 켜기 시각에 자동으로 사라집니다.", "지금 바로 적용") | Out-Null
     Start-ScheduledTask -TaskName $task
 })
 
 $previewButton.Add_Click({
-    if ($urlRadio.Checked) {
-        $url = $urlText.Text.Trim()
-        if (-not $url) {
-            [System.Windows.Forms.MessageBox]::Show("띄울 웹사이트 주소를 입력하세요.", "알림") | Out-Null
-            return
-        }
-        if ($url -notmatch '^https?://') { $urlText.Text = "https://$url" }
-    } elseif ($showMessage.Checked -and -not $msgText.Text.Trim()) {
-        [System.Windows.Forms.MessageBox]::Show("안내 문구를 입력하세요.", "알림") | Out-Null
-        return
-    }
-    if (-not $urlRadio.Checked -and -not $showMessage.Checked -and -not $script:imageFile) {
-        [System.Windows.Forms.MessageBox]::Show("문구나 이미지 중 하나는 있어야 합니다.", "알림") | Out-Null
-        return
-    }
-    Save-Settings
+    if (-not (Save-CheckedSettings)) { return }
     # 실제 예약과 같은 방식으로 실행한다
     Start-Process powershell.exe `
         -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
@@ -354,6 +382,7 @@ $testButton.Add_Click({
         -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $script
 })
 
+Sync-TaskFolder
 Update-List
 Update-ImagePreview
 if ($settings.Mode -eq "url") { $urlRadio.Checked = $true } else { $screenRadio.Checked = $true }
