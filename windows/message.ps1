@@ -20,10 +20,15 @@ try {
     & (Join-Path $dir "screen_on.ps1")
 
     if ($settings.Mode -eq "url" -and $settings.Url) {
-        # 전용 프로필로 Edge 를 키오스크(전체 화면) 모드로 띄운다
-        $edgeProfile = Join-Path $dir "edge_profile"
-        Start-Process "msedge.exe" -ArgumentList "--kiosk", "`"$($settings.Url)`"", "--edge-kiosk-type=fullscreen",
-            "--no-first-run", "--user-data-dir=`"$edgeProfile`""
+        # 전용 프로필로 크롬을 키오스크(전체 화면) 모드로 띄운다. 크롬이 없으면 Edge 로 띄운다.
+        $browserProfile = Join-Path $dir "browser_profile"
+        $browserArgs = @("--kiosk", "`"$($settings.Url)`"", "--no-first-run", "--no-default-browser-check",
+            "--user-data-dir=`"$browserProfile`"")
+        try {
+            Start-Process "chrome.exe" -ArgumentList $browserArgs -ErrorAction Stop
+        } catch {
+            Start-Process "msedge.exe" -ArgumentList ($browserArgs + "--edge-kiosk-type=fullscreen")
+        }
 
         # QR 화면보다 위에 오도록 창을 항상 위로 올린다
         Add-Type @"
@@ -39,8 +44,8 @@ public class TopWindow {
         $deadline = (Get-Date).AddSeconds(30)
         do {
             Start-Sleep -Milliseconds 500
-            $windows = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" |
-                Where-Object { $_.CommandLine -like "*$edgeProfile*" } |
+            $windows = @(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe' OR Name = 'msedge.exe'" |
+                Where-Object { $_.CommandLine -like "*$browserProfile*" } |
                 ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } |
                 Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })
         } until ($windows.Count -gt 0 -or (Get-Date) -gt $deadline)

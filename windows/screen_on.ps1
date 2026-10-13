@@ -4,15 +4,15 @@ Get-Process powershell -ErrorAction SilentlyContinue |
     Where-Object { $_.Id -ne $PID -and $_.MainWindowTitle -eq "ScreenTimerMessage" } |
     Stop-Process -Force
 
-# 안내용으로 띄운 웹사이트(전용 프로필의 Edge)도 닫는다. 다른 Edge 창은 건드리지 않는다.
-$edgeProfile = Join-Path $PSScriptRoot "edge_profile"
-$edge = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -like "*$edgeProfile*" })
-if ($edge.Count -gt 0) {
+# 안내용으로 띄운 웹사이트(전용 프로필의 크롬/Edge)도 닫는다. 다른 브라우저 창은 건드리지 않는다.
+$browserProfile = Join-Path $PSScriptRoot "browser_profile"
+$browser = @(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe' OR Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*$browserProfile*" })
+if ($browser.Count -gt 0) {
     # 정상 종료를 먼저 시도해야 다음 실행 때 "복원" 안내가 뜨지 않는다
-    $edge | ForEach-Object { (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).CloseMainWindow() } | Out-Null
+    $browser | ForEach-Object { (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).CloseMainWindow() } | Out-Null
     Start-Sleep -Seconds 2
-    $edge | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    $browser | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
 Add-Type @"
