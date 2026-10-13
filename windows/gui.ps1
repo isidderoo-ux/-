@@ -127,7 +127,7 @@ $showInfo = New-Control CheckBox 200 92 185 26
 $showInfo.Text = "인증 시간 함께 표시"
 $showInfo.Checked = [bool]$settings.ShowInfo
 $previewButton = New-Control Button 15 130 370 34
-$previewButton.Text = "저장하고 미리보기 (5초)"
+$previewButton.Text = "저장하고 미리보기 (8초)"
 $msgBox.Controls.AddRange(@($msgText, (New-Label "글자 크기" 15 92), $sizeInput,
     (New-Label "%" 162 92), $showInfo, $previewButton))
 
@@ -188,9 +188,10 @@ $previewButton.Add_Click({
     }
     [pscustomobject]@{ Message = $msgText.Text.Trim(); Size = [int]$sizeInput.Value; ShowInfo = $showInfo.Checked } |
         ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
-    Start-Process powershell.exe -WindowStyle Hidden `
-        -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
-    $script = "Start-Sleep 5; & '$dir\screen_on.ps1'"
+    # 실제 예약과 같은 방식으로 실행한다
+    Start-Process powershell.exe `
+        -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
+    $script = "Start-Sleep 8; & '$dir\screen_on.ps1'"
     Start-Process powershell.exe -WindowStyle Hidden `
         -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $script
 })
