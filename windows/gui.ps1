@@ -4,33 +4,47 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$SlotCount = 2
 $dayNames = "월", "화", "수", "목", "금", "토", "일"
 $dayValues = [System.DayOfWeek[]]@(1, 2, 3, 4, 5, 6, 0)
 
-function Get-Trigger($name) {
-    $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
-    if ($task -and $task.Triggers.Count -gt 0) { return $task.Triggers[0] }
-    return $null
+function Format-Days($mask) {
+    $picked = @(0..6 | Where-Object { $mask -band (1 -shl [int]$dayValues[$_]) })
+    $text = ($picked | ForEach-Object { $dayNames[$_] }) -join ""
+    switch ($text) {
+        "월화수목금토일" { return "매일" }
+        "월화수목금" { return "평일" }
+        "토일" { return "주말" }
+        default { return $text }
+    }
 }
 
-function Get-SlotSummary($slot) {
-    $days = (0..6 | Where-Object { $slot.DayBoxes[$_].Checked } | ForEach-Object { $dayNames[$_] }) -join ""
-    return "$days $($slot.Off.Value.ToString('HH:mm'))~$($slot.On.Value.ToString('HH:mm'))"
+# 작업 스케줄러에 등록된 예약 목록을 읽어 온다
+function Get-Schedules {
+    Get-ScheduledTask -TaskName "ScreenOff*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.TaskName -match '^ScreenOff(\d*)$' } |
+        ForEach-Object {
+            $slot = $Matches[1]
+            $offTrigger = $_.Triggers[0]
+            $onTask = Get-ScheduledTask -TaskName "ScreenOn$slot" -ErrorAction SilentlyContinue
+            # 요일 없이 매일 실행하는 예약(이전 버전)은 모든 요일로 취급
+            $mask = if ($offTrigger.DaysOfWeek) { [int]$offTrigger.DaysOfWeek } else { 127 }
+            [pscustomobject]@{
+                Slot = $slot
+                Days = Format-Days $mask
+                Off  = ([datetime]$offTrigger.StartBoundary).ToString("HH:mm")
+                On   = if ($onTask) { ([datetime]$onTask.Triggers[0].StartBoundary).ToString("HH:mm") } else { "--:--" }
+            }
+        } | Sort-Object Off
 }
 
-function Update-Status {
-    $lines = @()
-    for ($i = 1; $i -le $SlotCount; $i++) {
-        if (Get-Trigger "ScreenOff$i") { $lines += "예약 $i : $(Get-SlotSummary $slots[$i - 1])" }
+function Update-List {
+    $script:schedules = @(Get-Schedules)
+    $list.Items.Clear()
+    foreach ($s in $script:schedules) {
+        [void]$list.Items.Add("$($s.Days)   $($s.Off) 끄기  →  $($s.On) 켜기")
     }
-    if ($lines.Count -gt 0) {
-        $status.Text = "저장된 예약  " + ($lines -join "  /  ")
-        $status.ForeColor = [System.Drawing.Color]::DarkGreen
-    } else {
-        $status.Text = "저장된 예약이 없습니다."
-        $status.ForeColor = [System.Drawing.Color]::DimGray
-    }
+    if ($script:schedules.Count -eq 0) { [void]$list.Items.Add("(저장된 예약이 없습니다)") }
+    $deleteButton.Enabled = $false
 }
 
 function New-Control($type, $x, $y, $w, $h) {
@@ -62,84 +76,73 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
+$form.ClientSize = New-Object System.Drawing.Size(430, 470)
 
+# ── 새 예약 만들기 ──
+$newBox = New-Control GroupBox 15 10 400 160
+$newBox.Text = "새 예약"
 $today = (Get-Date).Date
-$slots = @()
-$y = 10
-for ($i = 1; $i -le $SlotCount; $i++) {
-    $offTrigger = Get-Trigger "ScreenOff$i"
-    $onTrigger = Get-Trigger "ScreenOn$i"
-
-    $box = New-Control GroupBox 15 $y 400 125
-    $box.Text = "예약 $i"
-
-    $enabled = New-Control CheckBox 15 25 70 24
-    $enabled.Text = "사용"
-    $enabled.Checked = [bool]$offTrigger
-
-    $offValue = if ($offTrigger) { $today + ([datetime]$offTrigger.StartBoundary).TimeOfDay } else { $today.AddHours(23) }
-    $onValue = if ($onTrigger) { $today + ([datetime]$onTrigger.StartBoundary).TimeOfDay } else { $today.AddHours(7.5) }
-    $offPicker = New-TimePicker 140 24 $offValue
-    $onPicker = New-TimePicker 290 24 $onValue
-
-    $dayBoxes = @()
-    for ($d = 0; $d -lt 7; $d++) {
-        $cb = New-Control CheckBox (15 + $d * 54) 70 52 24
-        $cb.Text = $dayNames[$d]
-        $cb.Checked = if ($offTrigger) {
-            ($offTrigger.DaysOfWeek -band (1 -shl [int]$dayValues[$d])) -ne 0
-        } else { $d -lt 5 }
-        $dayBoxes += $cb
-    }
-
-    $box.Controls.AddRange(@($enabled, (New-Label "끄기" 100 24), $offPicker,
-        (New-Label "켜기" 250 24), $onPicker) + $dayBoxes)
-    $form.Controls.Add($box)
-    $slots += [pscustomobject]@{ Enabled = $enabled; Off = $offPicker; On = $onPicker; DayBoxes = $dayBoxes }
-    $y += 135
+$offPicker = New-TimePicker 60 28 $today.AddHours(23)
+$onPicker = New-TimePicker 220 28 $today.AddHours(7.5)
+$dayBoxes = @()
+for ($d = 0; $d -lt 7; $d++) {
+    $cb = New-Control CheckBox (15 + $d * 54) 70 52 24
+    $cb.Text = $dayNames[$d]
+    $cb.Checked = $d -lt 5
+    $dayBoxes += $cb
 }
+$addButton = New-Control Button 15 110 370 34
+$addButton.Text = "+ 예약 추가"
+$newBox.Controls.AddRange(@((New-Label "끄기" 15 28), $offPicker,
+    (New-Label "켜기" 175 28), $onPicker, $addButton) + $dayBoxes)
 
-$saveButton = New-Control Button 15 $y 195 34
-$saveButton.Text = "저장"
-$deleteButton = New-Control Button 220 $y 195 34
-$deleteButton.Text = "모두 삭제"
-$testButton = New-Control Button 15 ($y + 42) 400 34
+# ── 저장된 예약 목록 ──
+$listLabel = New-Label "저장된 예약" 15 180
+$list = New-Control ListBox 15 208 400 150
+$deleteButton = New-Control Button 15 366 400 34
+$deleteButton.Text = "선택한 예약 삭제"
+$testButton = New-Control Button 15 420 400 34
 $testButton.Text = "테스트: 끄고 5초 뒤 켜기"
-$status = New-Control Label 15 ($y + 86) 400 44
-$form.ClientSize = New-Object System.Drawing.Size(430, ($y + 135))
-$form.Controls.AddRange(@($saveButton, $deleteButton, $testButton, $status))
 
-$saveButton.Add_Click({
+$form.Controls.AddRange(@($newBox, $listLabel, $list, $deleteButton, $testButton))
+
+$addButton.Add_Click({
+    $days = @(for ($d = 0; $d -lt 7; $d++) { if ($dayBoxes[$d].Checked) { $dayValues[$d] } })
+    $off = $offPicker.Value.ToString("HH:mm")
+    $on = $onPicker.Value.ToString("HH:mm")
+    if ($days.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("요일을 하나 이상 선택하세요.", "알림") | Out-Null
+        return
+    }
+    if ($off -eq $on) {
+        [System.Windows.Forms.MessageBox]::Show("끄기와 켜기 시각이 같습니다.", "알림") | Out-Null
+        return
+    }
+    # 비어 있는 예약 번호를 찾는다
+    $used = @($script:schedules | ForEach-Object { $_.Slot })
+    $slot = 1
+    while ($used -contains "$slot") { $slot++ }
     try {
-        # 이전 버전(요일 없이 매일)으로 등록한 예약 정리
-        foreach ($legacy in "ScreenOff", "ScreenOn") {
-            Unregister-ScheduledTask -TaskName $legacy -Confirm:$false -ErrorAction SilentlyContinue
-        }
-        for ($i = 1; $i -le $SlotCount; $i++) {
-            $slot = $slots[$i - 1]
-            $days = @(for ($d = 0; $d -lt 7; $d++) { if ($slot.DayBoxes[$d].Checked) { $dayValues[$d] } })
-            if (-not $slot.Enabled.Checked) {
-                & "$dir\uninstall.ps1" -Slot $i | Out-Null
-                continue
-            }
-            if ($days.Count -eq 0) { throw "예약 $i 에 요일을 하나 이상 선택하세요." }
-            $off = $slot.Off.Value.ToString("HH:mm")
-            $on = $slot.On.Value.ToString("HH:mm")
-            if ($off -eq $on) { throw "예약 $i 의 끄기/켜기 시각이 같습니다." }
-            & "$dir\install.ps1" -Slot $i -Off $off -On $on -Days $days | Out-Null
-        }
-        Update-Status
-        [System.Windows.Forms.MessageBox]::Show("저장했습니다.", "완료") | Out-Null
+        & "$dir\install.ps1" -Slot $slot -Off $off -On $on -Days $days | Out-Null
+        Update-List
     } catch {
-        [System.Windows.Forms.MessageBox]::Show("저장하지 못했습니다.`n`n$($_.Exception.Message)", "오류", "OK", "Error") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("추가하지 못했습니다.`n`n$($_.Exception.Message)", "오류", "OK", "Error") | Out-Null
     }
 })
 
+$list.Add_SelectedIndexChanged({
+    $deleteButton.Enabled = $list.SelectedIndex -ge 0 -and $list.SelectedIndex -lt $script:schedules.Count
+})
+
 $deleteButton.Add_Click({
-    & "$dir\uninstall.ps1" | Out-Null
-    foreach ($slot in $slots) { $slot.Enabled.Checked = $false }
-    Update-Status
-    [System.Windows.Forms.MessageBox]::Show("모든 예약을 삭제했습니다.", "완료") | Out-Null
+    $s = $script:schedules[$list.SelectedIndex]
+    $answer = [System.Windows.Forms.MessageBox]::Show(
+        "이 예약을 삭제할까요?`n`n$($list.SelectedItem)", "예약 삭제", "YesNo", "Question")
+    if ($answer -ne "Yes") { return }
+    foreach ($name in "ScreenOff$($s.Slot)", "ScreenOn$($s.Slot)") {
+        Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    Update-List
 })
 
 $testButton.Add_Click({
@@ -148,5 +151,5 @@ $testButton.Add_Click({
         -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $script
 })
 
-Update-Status
+Update-List
 [void]$form.ShowDialog()
