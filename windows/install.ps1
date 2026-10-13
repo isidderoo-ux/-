@@ -33,6 +33,19 @@ if ($Off -le $On) {
 }
 
 Register-ScreenTask "ScreenOn$Slot"  "screen_on.ps1"  $On  $Days
+# 로그인할 때 지금이 인증 시간이 아니면 안내 문구를 바로 띄운다 (재부팅 대비)
+try {
+    $checkAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$dir\check.ps1`""
+    $checkTrigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+    $checkTrigger.Delay = "PT15S"
+    Register-ScheduledTask -TaskName "ScreenCheck" -Action $checkAction -Trigger $checkTrigger `
+        -Principal (New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive) `
+        -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries) -Force | Out-Null
+} catch {
+    Write-Warning "로그인 시 확인 작업을 등록하지 못했습니다: $($_.Exception.Message)"
+}
+
 if ($Message) {
     $names = @{ Monday = "월"; Tuesday = "화"; Wednesday = "수"; Thursday = "목"; Friday = "금"; Saturday = "토"; Sunday = "일" }
     $dayText = (@("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday") |

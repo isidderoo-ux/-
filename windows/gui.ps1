@@ -134,12 +134,14 @@ $msgBox.Controls.AddRange(@($msgText, (New-Label "글자 크기" 15 92), $sizeIn
 # ── 저장된 예약 목록 ──
 $listLabel = New-Label "저장된 예약" 15 405
 $list = New-Control ListBox 15 433 400 130
-$deleteButton = New-Control Button 15 570 400 34
+$deleteButton = New-Control Button 15 570 195 34
 $deleteButton.Text = "선택한 예약 삭제"
+$applyButton = New-Control Button 220 570 195 34
+$applyButton.Text = "지금 바로 적용"
 $testButton = New-Control Button 15 615 400 34
 $testButton.Text = "모니터 끄기 테스트 (5초간 화면만 꺼짐, 문구 없음)"
 
-$form.Controls.AddRange(@($newBox, $msgBox, $listLabel, $list, $deleteButton, $testButton))
+$form.Controls.AddRange(@($newBox, $msgBox, $listLabel, $list, $deleteButton, $applyButton, $testButton))
 
 $addButton.Add_Click({
     $days = @(for ($d = 0; $d -lt 7; $d++) { if ($dayBoxes[$d].Checked) { $dayValues[$d] } })
@@ -179,6 +181,18 @@ $deleteButton.Add_Click({
         Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
     }
     Update-List
+})
+
+# 예약을 기다리지 않고 지금 시각 기준으로 화면 상태를 맞춘다
+$applyButton.Add_Click({
+    $task = & "$dir\check.ps1" -DryRun
+    if (-not $task) {
+        [System.Windows.Forms.MessageBox]::Show("지금은 인증 시간이라 QR 화면을 그대로 둡니다.", "지금 바로 적용") | Out-Null
+        return
+    }
+    [System.Windows.Forms.MessageBox]::Show(
+        "지금은 인증 시간이 아니므로 안내 문구를 띄웁니다.`n다음 켜기 시각에 자동으로 사라집니다.`n`n직접 닫으려면 Ctrl + Shift + Q", "지금 바로 적용") | Out-Null
+    Start-ScheduledTask -TaskName $task
 })
 
 $previewButton.Add_Click({

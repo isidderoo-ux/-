@@ -4,7 +4,7 @@
 param([int]$Slot = 0)
 $pattern = if ($Slot -gt 0) { "Screen*$Slot" } else { "Screen*" }
 Get-ScheduledTask -TaskName $pattern -ErrorAction SilentlyContinue |
-    Where-Object { $_.TaskName -match '^Screen(Off|On)\d*$' } |
+    Where-Object { $_.TaskName -match '^Screen(Off|On)\d*$|^ScreenCheck$' } |
     ForEach-Object {
         Unregister-ScheduledTask -TaskName $_.TaskName -Confirm:$false
         Write-Host "삭제: $($_.TaskName)"
