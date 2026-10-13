@@ -77,7 +77,7 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
-$form.ClientSize = New-Object System.Drawing.Size(430, 510)
+$form.ClientSize = New-Object System.Drawing.Size(430, 660)
 
 # ── 새 예약 만들기 ──
 $newBox = New-Control GroupBox 15 10 400 195
@@ -103,17 +103,43 @@ $newBox.Controls.AddRange(@((New-Label "켜기" 15 28), $onPicker,
     (New-Label "끄기" 175 28), $offPicker, (New-Label "끄는 시간에" 15 105),
     $messageRadio, $offRadio, $addButton) + $dayBoxes)
 
+# ── 안내 문구 설정 (settings.json 에 저장, message.ps1 이 읽음) ──
+$settingsPath = Join-Path $dir "settings.json"
+$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true }
+if (Test-Path $settingsPath) {
+    try {
+        $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $saved.PSObject.Properties) { $settings.($p.Name) = $p.Value }
+    } catch {}
+}
+
+$msgBox = New-Control GroupBox 15 215 400 180
+$msgBox.Text = "안내 문구"
+$msgText = New-Control TextBox 15 25 370 56
+$msgText.Multiline = $true
+$msgText.Text = $settings.Message
+$sizeInput = New-Control NumericUpDown 95 92 65 28
+$sizeInput.Minimum = 30
+$sizeInput.Maximum = 300
+$sizeInput.Increment = 10
+$sizeInput.Value = [int]$settings.Size
+$showInfo = New-Control CheckBox 200 92 185 26
+$showInfo.Text = "인증 시간 함께 표시"
+$showInfo.Checked = [bool]$settings.ShowInfo
+$previewButton = New-Control Button 15 130 370 34
+$previewButton.Text = "저장하고 미리보기 (5초)"
+$msgBox.Controls.AddRange(@($msgText, (New-Label "글자 크기" 15 92), $sizeInput,
+    (New-Label "%" 162 92), $showInfo, $previewButton))
+
 # ── 저장된 예약 목록 ──
-$listLabel = New-Label "저장된 예약" 15 215
-$list = New-Control ListBox 15 243 400 150
-$deleteButton = New-Control Button 15 401 400 34
+$listLabel = New-Label "저장된 예약" 15 405
+$list = New-Control ListBox 15 433 400 130
+$deleteButton = New-Control Button 15 570 400 34
 $deleteButton.Text = "선택한 예약 삭제"
-$testMessageButton = New-Control Button 15 460 195 34
-$testMessageButton.Text = "테스트: 안내 문구 5초"
-$testButton = New-Control Button 220 460 195 34
+$testButton = New-Control Button 15 615 400 34
 $testButton.Text = "테스트: 모니터 끄기 5초"
 
-$form.Controls.AddRange(@($newBox, $listLabel, $list, $deleteButton, $testMessageButton, $testButton))
+$form.Controls.AddRange(@($newBox, $msgBox, $listLabel, $list, $deleteButton, $testButton))
 
 $addButton.Add_Click({
     $days = @(for ($d = 0; $d -lt 7; $d++) { if ($dayBoxes[$d].Checked) { $dayValues[$d] } })
@@ -155,7 +181,13 @@ $deleteButton.Add_Click({
     Update-List
 })
 
-$testMessageButton.Add_Click({
+$previewButton.Add_Click({
+    if (-not $msgText.Text.Trim()) {
+        [System.Windows.Forms.MessageBox]::Show("안내 문구를 입력하세요.", "알림") | Out-Null
+        return
+    }
+    [pscustomobject]@{ Message = $msgText.Text.Trim(); Size = [int]$sizeInput.Value; ShowInfo = $showInfo.Checked } |
+        ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
     Start-Process powershell.exe -WindowStyle Hidden `
         -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
     $script = "Start-Sleep 5; & '$dir\screen_on.ps1'"

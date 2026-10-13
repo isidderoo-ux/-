@@ -1,8 +1,18 @@
 ﻿# 모든 모니터를 검은 화면 + 안내 문구로 덮는다 (screen_on.ps1 이 실행되면 닫힘)
 # 관리자가 직접 닫으려면 Ctrl + Shift + Q
+# 문구/글자 크기는 같은 폴더의 settings.json (설정 창에서 저장)
 param([string]$Info = "")
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+
+$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true }
+$settingsPath = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "settings.json"
+if (Test-Path $settingsPath) {
+    try {
+        $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($p in $saved.PSObject.Properties) { $settings.($p.Name) = $p.Value }
+    } catch {}
+}
 
 $title = "ScreenTimerMessage"
 # 이미 떠 있는 안내 화면이 있으면 닫고 새로 띄운다
@@ -13,7 +23,13 @@ Get-Process powershell -ErrorAction SilentlyContinue |
 $script:allowClose = $false
 $forms = foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
     $b = $screen.Bounds
-    $size = [Math]::Min($b.Width / 16, $b.Height / 12)
+    $size = [Math]::Min($b.Width / 16, $b.Height / 12) * $settings.Size / 100
+    # 문구가 화면 너비를 넘으면 들어갈 때까지 줄인다
+    while ($size -gt 10) {
+        $font = New-Object System.Drawing.Font("Malgun Gothic", [float]$size, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
+        if ([System.Windows.Forms.TextRenderer]::MeasureText($settings.Message, $font).Width -le $b.Width * 0.92) { break }
+        $size *= 0.9
+    }
 
     $f = New-Object System.Windows.Forms.Form
     $f.Text = $title
@@ -25,14 +41,14 @@ $forms = foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
     $f.KeyPreview = $true
 
     $main = New-Object System.Windows.Forms.Label
-    $main.Text = "지금은 인증시간이 아닙니다"
+    $main.Text = $settings.Message
     $main.ForeColor = [System.Drawing.Color]::White
     $main.Font = New-Object System.Drawing.Font("Malgun Gothic", [float]$size, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
     $main.TextAlign = "BottomCenter"
     $main.Dock = "Fill"
 
     $sub = New-Object System.Windows.Forms.Label
-    $sub.Text = if ($Info) { "인증 시간: $Info" } else { "" }
+    $sub.Text = if ($Info -and $settings.ShowInfo) { "인증 시간: $Info" } else { "" }
     $sub.ForeColor = [System.Drawing.Color]::Gray
     $sub.Font = New-Object System.Drawing.Font("Malgun Gothic", [float]($size / 2.2), [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
     $sub.TextAlign = "TopCenter"
