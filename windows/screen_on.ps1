@@ -1,8 +1,19 @@
 ﻿# 모니터를 켠다 - 마우스를 1픽셀 움직였다가 되돌려서 화면을 깨운다
-# 안내 문구 화면(message.ps1)이 떠 있으면 먼저 닫는다
+# 안내 화면(message.ps1)이 떠 있으면 먼저 닫는다
 Get-Process powershell -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowTitle -eq "ScreenTimerMessage" } |
+    Where-Object { $_.Id -ne $PID -and $_.MainWindowTitle -eq "ScreenTimerMessage" } |
     Stop-Process -Force
+
+# 안내용으로 띄운 웹사이트(전용 프로필의 Edge)도 닫는다. 다른 Edge 창은 건드리지 않는다.
+$edgeProfile = Join-Path $PSScriptRoot "edge_profile"
+$edge = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*$edgeProfile*" })
+if ($edge.Count -gt 0) {
+    # 정상 종료를 먼저 시도해야 다음 실행 때 "복원" 안내가 뜨지 않는다
+    $edge | ForEach-Object { (Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue).CloseMainWindow() } | Out-Null
+    Start-Sleep -Seconds 2
+    $edge | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+}
 
 Add-Type @"
 using System;

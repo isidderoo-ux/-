@@ -85,7 +85,7 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
-$form.ClientSize = New-Object System.Drawing.Size(860, 495)
+$form.ClientSize = New-Object System.Drawing.Size(860, 530)
 
 # ── 새 예약 만들기 ──
 $newBox = New-Control GroupBox 15 10 400 222
@@ -131,7 +131,7 @@ $newBox.Controls.AddRange(@($orderPanel, $onLabel, $onPicker,
 
 # ── 안내 화면 설정 (settings.json 에 저장, message.ps1 이 읽음) ──
 $settingsPath = Join-Path $dir "settings.json"
-$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = "" }
+$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = ""; Mode = "screen"; Url = "" }
 if (Test-Path $settingsPath) {
     try {
         $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -153,6 +153,7 @@ function Save-Settings {
     [pscustomobject]@{
         Message = $msgText.Text.Trim(); Size = [int]$sizeInput.Value
         ShowInfo = $showInfo.Checked; ShowMessage = $showMessage.Checked; Image = $script:imageFile
+        Mode = $(if ($urlRadio.Checked) { "url" } else { "screen" }); Url = $urlText.Text.Trim()
     } | ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
 }
 
@@ -169,36 +170,60 @@ function Update-ImagePreview {
     }
 }
 
-$msgBox = New-Control GroupBox 430 10 415 470
+$msgBox = New-Control GroupBox 430 10 415 505
 $msgBox.Text = "안내 화면"
-$showMessage = New-Control CheckBox 15 25 200 26
+
+# 안내 화면 종류 (라디오 버튼 묶음이 따로 동작하도록 패널에 넣는다)
+$modePanel = New-Control Panel 15 22 385 30
+$screenRadio = New-Control RadioButton 0 2 160 26
+$screenRadio.Text = "문구 / 이미지"
+$urlRadio = New-Control RadioButton 170 2 200 26
+$urlRadio.Text = "웹사이트 (URL)"
+$modePanel.Controls.AddRange(@($screenRadio, $urlRadio))
+$urlText = New-Control TextBox 60 55 340 28
+$urlText.Text = $settings.Url
+$urlLabel = New-Label "주소" 15 55
+
+$showMessage = New-Control CheckBox 15 90 200 26
 $showMessage.Text = "문구 표시"
 $showMessage.Checked = [bool]$settings.ShowMessage
-$msgText = New-Control TextBox 15 55 385 56
+$msgText = New-Control TextBox 15 120 385 56
 $msgText.Multiline = $true
 $msgText.Text = $settings.Message
-$sizeInput = New-Control NumericUpDown 95 122 65 28
+$sizeInput = New-Control NumericUpDown 95 187 65 28
 $sizeInput.Minimum = 30
 $sizeInput.Maximum = 300
 $sizeInput.Increment = 10
 $sizeInput.Value = [int]$settings.Size
-$showInfo = New-Control CheckBox 200 122 200 26
+$showInfo = New-Control CheckBox 200 187 200 26
 $showInfo.Text = "인증 시간 함께 표시"
 $showInfo.Checked = [bool]$settings.ShowInfo
 
-$chooseImageButton = New-Control Button 15 165 130 32
+$chooseImageButton = New-Control Button 15 230 130 32
 $chooseImageButton.Text = "이미지 선택..."
-$removeImageButton = New-Control Button 150 165 90 32
+$removeImageButton = New-Control Button 150 230 90 32
 $removeImageButton.Text = "이미지 빼기"
-$imageName = New-Control Label 248 172 155 22
-$imagePreview = New-Control PictureBox 15 205 385 210
+$imageName = New-Control Label 248 237 155 22
+$imagePreview = New-Control PictureBox 15 270 385 180
 $imagePreview.SizeMode = "Zoom"
 $imagePreview.BackColor = [System.Drawing.Color]::Black
-$previewButton = New-Control Button 15 425 385 34
-$previewButton.Text = "저장하고 미리보기 (8초)"
-$msgBox.Controls.AddRange(@($showMessage, $msgText, (New-Label "글자 크기" 15 122), $sizeInput,
-    (New-Label "%" 162 122), $showInfo, $chooseImageButton, $removeImageButton, $imageName,
+$previewButton = New-Control Button 15 460 385 34
+$previewButton.Text = "저장하고 미리보기 (10초)"
+$sizeLabel = New-Label "글자 크기" 15 187
+$percentLabel = New-Label "%" 162 187
+$msgBox.Controls.AddRange(@($modePanel, $urlLabel, $urlText, $showMessage, $msgText, $sizeLabel, $sizeInput,
+    $percentLabel, $showInfo, $chooseImageButton, $removeImageButton, $imageName,
     $imagePreview, $previewButton))
+
+# 고른 종류에 해당하는 칸만 쓸 수 있게 한다
+function Update-ModeControls {
+    $isUrl = $urlRadio.Checked
+    foreach ($c in $urlLabel, $urlText) { $c.Enabled = $isUrl }
+    foreach ($c in $showMessage, $msgText, $sizeLabel, $sizeInput, $percentLabel, $showInfo,
+        $chooseImageButton, $removeImageButton, $imageName, $imagePreview) { $c.Enabled = -not $isUrl }
+    if (-not $isUrl) { Update-ImagePreview }
+}
+$urlRadio.Add_CheckedChanged({ Update-ModeControls })
 
 # ── 저장된 예약 목록 ──
 $listLabel = New-Label "저장된 예약" 15 242
@@ -293,11 +318,18 @@ $applyButton.Add_Click({
 })
 
 $previewButton.Add_Click({
-    if ($showMessage.Checked -and -not $msgText.Text.Trim()) {
+    if ($urlRadio.Checked) {
+        $url = $urlText.Text.Trim()
+        if (-not $url) {
+            [System.Windows.Forms.MessageBox]::Show("띄울 웹사이트 주소를 입력하세요.", "알림") | Out-Null
+            return
+        }
+        if ($url -notmatch '^https?://') { $urlText.Text = "https://$url" }
+    } elseif ($showMessage.Checked -and -not $msgText.Text.Trim()) {
         [System.Windows.Forms.MessageBox]::Show("안내 문구를 입력하세요.", "알림") | Out-Null
         return
     }
-    if (-not $showMessage.Checked -and -not $script:imageFile) {
+    if (-not $urlRadio.Checked -and -not $showMessage.Checked -and -not $script:imageFile) {
         [System.Windows.Forms.MessageBox]::Show("문구나 이미지 중 하나는 있어야 합니다.", "알림") | Out-Null
         return
     }
@@ -305,7 +337,7 @@ $previewButton.Add_Click({
     # 실제 예약과 같은 방식으로 실행한다
     Start-Process powershell.exe `
         -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", "`"$dir\message.ps1`"", "-Info", "`"미리보기`""
-    $script = "Start-Sleep 8; & '$dir\screen_on.ps1'"
+    $script = "Start-Sleep 10; & '$dir\screen_on.ps1'"
     Start-Process powershell.exe -WindowStyle Hidden `
         -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $script
 })
@@ -318,4 +350,6 @@ $testButton.Add_Click({
 
 Update-List
 Update-ImagePreview
+if ($settings.Mode -eq "url") { $urlRadio.Checked = $true } else { $screenRadio.Checked = $true }
+Update-ModeControls
 [void]$form.ShowDialog()

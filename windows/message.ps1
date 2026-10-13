@@ -1,4 +1,5 @@
-﻿# 모든 모니터를 안내 화면(이미지 및/또는 문구)으로 덮는다 (screen_on.ps1 이 실행되면 닫힘)
+﻿# 모든 모니터를 안내 화면(이미지 및/또는 문구)으로 덮거나, 지정한 웹사이트를 전체 화면으로 띄운다
+# (screen_on.ps1 이 실행되면 닫힘)
 # 관리자가 직접 닫으려면 Ctrl + Shift + Q
 # 문구/글자 크기/이미지는 같은 폴더의 settings.json (설정 창에서 저장)
 param([string]$Info = "")
@@ -9,12 +10,48 @@ try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    $settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = "" }
+    $settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = ""; Mode = "screen"; Url = "" }
     $settingsPath = Join-Path $dir "settings.json"
     if (Test-Path $settingsPath) {
         $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
         foreach ($p in $saved.PSObject.Properties) { $settings.($p.Name) = $p.Value }
     }
+    # 이미 떠 있는 안내 화면/웹사이트가 있으면 닫고 새로 띄운다
+    & (Join-Path $dir "screen_on.ps1")
+
+    if ($settings.Mode -eq "url" -and $settings.Url) {
+        # 전용 프로필로 Edge 를 키오스크(전체 화면) 모드로 띄운다
+        $edgeProfile = Join-Path $dir "edge_profile"
+        Start-Process "msedge.exe" -ArgumentList "--kiosk", "`"$($settings.Url)`"", "--edge-kiosk-type=fullscreen",
+            "--no-first-run", "--user-data-dir=`"$edgeProfile`""
+
+        # QR 화면보다 위에 오도록 창을 항상 위로 올린다
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class TopWindow {
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+}
+"@
+        $deadline = (Get-Date).AddSeconds(30)
+        do {
+            Start-Sleep -Milliseconds 500
+            $windows = @(Get-CimInstance Win32_Process -Filter "Name = 'msedge.exe'" |
+                Where-Object { $_.CommandLine -like "*$edgeProfile*" } |
+                ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue } |
+                Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero })
+        } until ($windows.Count -gt 0 -or (Get-Date) -gt $deadline)
+        foreach ($w in $windows) {
+            # HWND_TOPMOST(-1), SWP_NOMOVE(2) | SWP_NOSIZE(1)
+            [TopWindow]::SetWindowPos($w.MainWindowHandle, [IntPtr](-1), 0, 0, 0, 0, 3) | Out-Null
+            [TopWindow]::SetForegroundWindow($w.MainWindowHandle) | Out-Null
+        }
+        return
+    }
+
     $message = if ($settings.ShowMessage) { "$($settings.Message)".Trim() } else { "" }
     $infoText = if ($Info -and $settings.ShowInfo) { "인증 시간: $Info" } else { "" }
 
@@ -32,10 +69,6 @@ try {
     if (-not $image -and -not $message -and -not $infoText) { $message = "지금은 인증시간이 아닙니다" }
 
     $title = "ScreenTimerMessage"
-    # 이미 떠 있는 안내 화면이 있으면 닫고 새로 띄운다
-    Get-Process powershell -ErrorAction SilentlyContinue |
-        Where-Object { $_.Id -ne $PID -and $_.MainWindowTitle -eq $title } |
-        Stop-Process -Force
 
     $script:allowClose = $false
     $forms = foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
