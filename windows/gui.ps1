@@ -26,23 +26,31 @@ function Get-Schedules {
             $slot = $_.TaskName -replace '^ScreenOn', ''
             $onTrigger = $_.Triggers[0]
             $offTask = Get-ScheduledTask -TaskName "ScreenOff$slot" -ErrorAction SilentlyContinue
+            # 끄기 → 켜기 순서인 예약은 끄는 요일을 기준으로 보여준다
+            $offFirst = $offTask -and $offTask.Description -eq "OffFirst"
+            $baseTrigger = if ($offFirst) { $offTask.Triggers[0] } else { $onTrigger }
             # 요일 없이 매일 실행하는 예약(이전 버전)은 모든 요일로 취급
-            $mask = if ($onTrigger.DaysOfWeek) { [int]$onTrigger.DaysOfWeek } else { 127 }
+            $mask = if ($baseTrigger.DaysOfWeek) { [int]$baseTrigger.DaysOfWeek } else { 127 }
             [pscustomobject]@{
                 Slot = $slot
+                OffFirst = $offFirst
                 Days = Format-Days $mask
                 On   = ([datetime]$onTrigger.StartBoundary).ToString("HH:mm")
                 Off  = if ($offTask) { ([datetime]$offTask.Triggers[0].StartBoundary).ToString("HH:mm") } else { "--:--" }
                 Mode = if ($offTask -and $offTask.Actions[0].Arguments -like "*message.ps1*") { "안내 문구" } else { "끄기" }
             }
-        } | Sort-Object On
+        } | Sort-Object { if ($_.OffFirst) { $_.Off } else { $_.On } }
 }
 
 function Update-List {
     $script:schedules = @(Get-Schedules)
     $list.Items.Clear()
     foreach ($s in $script:schedules) {
-        [void]$list.Items.Add("$($s.Days)   $($s.On) 켜기  →  $($s.Off) $($s.Mode)")
+        if ($s.OffFirst) {
+            [void]$list.Items.Add("$($s.Days)   $($s.Off) $($s.Mode)  →  $($s.On) 켜기")
+        } else {
+            [void]$list.Items.Add("$($s.Days)   $($s.On) 켜기  →  $($s.Off) $($s.Mode)")
+        }
     }
     if ($script:schedules.Count -eq 0) { [void]$list.Items.Add("(저장된 예약이 없습니다)") }
     $deleteButton.Enabled = $false
@@ -77,30 +85,48 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
-$form.ClientSize = New-Object System.Drawing.Size(430, 660)
+$form.ClientSize = New-Object System.Drawing.Size(430, 687)
 
 # ── 새 예약 만들기 ──
-$newBox = New-Control GroupBox 15 10 400 195
+$newBox = New-Control GroupBox 15 10 400 222
 $newBox.Text = "새 예약"
 $today = (Get-Date).Date
-$onPicker = New-TimePicker 60 28 $today.AddHours(9)
-$offPicker = New-TimePicker 220 28 $today.AddHours(18)
+
+# 순서 선택 (라디오 버튼 묶음이 따로 동작하도록 패널에 넣는다)
+$orderPanel = New-Control Panel 15 24 370 30
+$onFirstRadio = New-Control RadioButton 50 2 140 26
+$onFirstRadio.Text = "켜기 → 끄기"
+$onFirstRadio.Checked = $true
+$offFirstRadio = New-Control RadioButton 200 2 140 26
+$offFirstRadio.Text = "끄기 → 켜기"
+$orderPanel.Controls.AddRange(@((New-Label "순서" 0 0), $onFirstRadio, $offFirstRadio))
+
+$onLabel = New-Label "켜기" 15 60
+$onPicker = New-TimePicker 60 60 $today.AddHours(9)
+$offLabel = New-Label "끄기" 175 60
+$offPicker = New-TimePicker 220 60 $today.AddHours(18)
+# 순서에 맞게 켜기/끄기 칸의 좌우 위치를 바꾼다
+$onFirstRadio.Add_CheckedChanged({
+    $first, $second = if ($onFirstRadio.Checked) { @(($onLabel, $onPicker), ($offLabel, $offPicker)) } else { @(($offLabel, $offPicker), ($onLabel, $onPicker)) }
+    $first[0].Left = 15; $first[1].Left = 60
+    $second[0].Left = 175; $second[1].Left = 220
+})
 $dayBoxes = @()
 for ($d = 0; $d -lt 7; $d++) {
-    $cb = New-Control CheckBox (15 + $d * 54) 70 52 24
+    $cb = New-Control CheckBox (15 + $d * 54) 100 52 24
     $cb.Text = $dayNames[$d]
     $cb.Checked = $d -lt 5
     $dayBoxes += $cb
 }
-$messageRadio = New-Control RadioButton 110 105 130 26
+$messageRadio = New-Control RadioButton 110 135 130 26
 $messageRadio.Text = "안내 문구 표시"
 $messageRadio.Checked = $true
-$offRadio = New-Control RadioButton 250 105 130 26
+$offRadio = New-Control RadioButton 250 135 130 26
 $offRadio.Text = "모니터 끄기"
-$addButton = New-Control Button 15 145 370 34
+$addButton = New-Control Button 15 172 370 34
 $addButton.Text = "+ 예약 추가"
-$newBox.Controls.AddRange(@((New-Label "켜기" 15 28), $onPicker,
-    (New-Label "끄기" 175 28), $offPicker, (New-Label "끄는 시간에" 15 105),
+$newBox.Controls.AddRange(@($orderPanel, $onLabel, $onPicker,
+    $offLabel, $offPicker, (New-Label "끄는 시간에" 15 135),
     $messageRadio, $offRadio, $addButton) + $dayBoxes)
 
 # ── 안내 문구 설정 (settings.json 에 저장, message.ps1 이 읽음) ──
@@ -113,7 +139,7 @@ if (Test-Path $settingsPath) {
     } catch {}
 }
 
-$msgBox = New-Control GroupBox 15 215 400 180
+$msgBox = New-Control GroupBox 15 242 400 180
 $msgBox.Text = "안내 문구"
 $msgText = New-Control TextBox 15 25 370 56
 $msgText.Multiline = $true
@@ -132,13 +158,13 @@ $msgBox.Controls.AddRange(@($msgText, (New-Label "글자 크기" 15 92), $sizeIn
     (New-Label "%" 162 92), $showInfo, $previewButton))
 
 # ── 저장된 예약 목록 ──
-$listLabel = New-Label "저장된 예약" 15 405
-$list = New-Control ListBox 15 433 400 130
-$deleteButton = New-Control Button 15 570 195 34
+$listLabel = New-Label "저장된 예약" 15 432
+$list = New-Control ListBox 15 460 400 130
+$deleteButton = New-Control Button 15 597 195 34
 $deleteButton.Text = "선택한 예약 삭제"
-$applyButton = New-Control Button 220 570 195 34
+$applyButton = New-Control Button 220 597 195 34
 $applyButton.Text = "지금 바로 적용"
-$testButton = New-Control Button 15 615 400 34
+$testButton = New-Control Button 15 642 400 34
 $testButton.Text = "모니터 끄기 테스트 (5초간 화면만 꺼짐, 문구 없음)"
 
 $form.Controls.AddRange(@($newBox, $msgBox, $listLabel, $list, $deleteButton, $applyButton, $testButton))
@@ -161,7 +187,8 @@ $addButton.Add_Click({
     while ($used -contains "$slot") { $slot++ }
     try {
         $useMessage = $messageRadio.Checked
-        & "$dir\install.ps1" -Slot $slot -Off $off -On $on -Days $days -Message:$useMessage | Out-Null
+        $offFirst = $offFirstRadio.Checked
+        & "$dir\install.ps1" -Slot $slot -Off $off -On $on -Days $days -Message:$useMessage -OffFirst:$offFirst | Out-Null
         Update-List
     } catch {
         [System.Windows.Forms.MessageBox]::Show("추가하지 못했습니다.`n`n$($_.Exception.Message)", "오류", "OK", "Error") | Out-Null
