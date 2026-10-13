@@ -23,7 +23,7 @@ function Get-Schedules {
     Get-ScheduledTask -TaskName "ScreenOff*" -ErrorAction SilentlyContinue |
         Where-Object { $_.TaskName -match '^ScreenOff(\d*)$' } |
         ForEach-Object {
-            $slot = $Matches[1]
+            $slot = $_.TaskName -replace '^ScreenOff', ''
             $offTrigger = $_.Triggers[0]
             $onTask = Get-ScheduledTask -TaskName "ScreenOn$slot" -ErrorAction SilentlyContinue
             # 요일 없이 매일 실행하는 예약(이전 버전)은 모든 요일로 취급
