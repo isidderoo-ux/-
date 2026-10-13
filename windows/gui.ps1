@@ -137,7 +137,7 @@ $list = New-Control ListBox 15 433 400 130
 $deleteButton = New-Control Button 15 570 400 34
 $deleteButton.Text = "선택한 예약 삭제"
 $testButton = New-Control Button 15 615 400 34
-$testButton.Text = "테스트: 모니터 끄기 5초"
+$testButton.Text = "모니터 끄기 테스트 (5초간 화면만 꺼짐, 문구 없음)"
 
 $form.Controls.AddRange(@($newBox, $msgBox, $listLabel, $list, $deleteButton, $testButton))
 
