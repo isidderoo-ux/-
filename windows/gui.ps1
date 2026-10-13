@@ -85,7 +85,7 @@ $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
 $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font("Malgun Gothic", 10)
-$form.ClientSize = New-Object System.Drawing.Size(860, 530)
+$form.ClientSize = New-Object System.Drawing.Size(860, 565)
 
 # ── 새 예약 만들기 ──
 $newBox = New-Control GroupBox 15 10 400 222
@@ -131,7 +131,7 @@ $newBox.Controls.AddRange(@($orderPanel, $onLabel, $onPicker,
 
 # ── 안내 화면 설정 (settings.json 에 저장, message.ps1 이 읽음) ──
 $settingsPath = Join-Path $dir "settings.json"
-$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = ""; Mode = "screen"; Url = "" }
+$settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = ""; Mode = "screen"; Url = ""; CloseButton = $true; AdminPin = "" }
 if (Test-Path $settingsPath) {
     try {
         $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -154,6 +154,7 @@ function Save-Settings {
         Message = $msgText.Text.Trim(); Size = [int]$sizeInput.Value
         ShowInfo = $showInfo.Checked; ShowMessage = $showMessage.Checked; Image = $script:imageFile
         Mode = $(if ($urlRadio.Checked) { "url" } else { "screen" }); Url = $urlText.Text.Trim()
+        CloseButton = $closeButtonCheck.Checked; AdminPin = $pinText.Text.Trim()
     } | ConvertTo-Json | Set-Content $settingsPath -Encoding UTF8
 }
 
@@ -170,7 +171,7 @@ function Update-ImagePreview {
     }
 }
 
-$msgBox = New-Control GroupBox 430 10 415 505
+$msgBox = New-Control GroupBox 430 10 415 540
 $msgBox.Text = "안내 화면"
 
 # 안내 화면 종류 (라디오 버튼 묶음이 따로 동작하도록 패널에 넣는다)
@@ -207,13 +208,18 @@ $imageName = New-Control Label 248 237 155 22
 $imagePreview = New-Control PictureBox 15 270 385 180
 $imagePreview.SizeMode = "Zoom"
 $imagePreview.BackColor = [System.Drawing.Color]::Black
-$previewButton = New-Control Button 15 460 385 34
+$closeButtonCheck = New-Control CheckBox 15 460 160 26
+$closeButtonCheck.Text = "끄기 버튼 표시"
+$closeButtonCheck.Checked = [bool]$settings.CloseButton
+$pinText = New-Control TextBox 245 460 155 28
+$pinText.Text = "$($settings.AdminPin)"
+$previewButton = New-Control Button 15 495 385 34
 $previewButton.Text = "저장하고 미리보기 (10초)"
 $sizeLabel = New-Label "글자 크기" 15 187
 $percentLabel = New-Label "%" 162 187
 $msgBox.Controls.AddRange(@($modePanel, $urlLabel, $urlText, $showMessage, $msgText, $sizeLabel, $sizeInput,
     $percentLabel, $showInfo, $chooseImageButton, $removeImageButton, $imageName,
-    $imagePreview, $previewButton))
+    $imagePreview, $closeButtonCheck, (New-Label "비밀번호" 178 460), $pinText, $previewButton))
 
 # 고른 종류에 해당하는 칸만 쓸 수 있게 한다
 function Update-ModeControls {

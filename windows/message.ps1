@@ -1,6 +1,6 @@
 ﻿# 모든 모니터를 안내 화면(이미지 및/또는 문구)으로 덮거나, 지정한 웹사이트를 전체 화면으로 띄운다
 # (screen_on.ps1 이 실행되면 닫힘)
-# 관리자가 직접 닫으려면 Ctrl + Shift + Q
+# 관리자가 직접 닫으려면 화면 아래 "대기화면 끄기" 버튼 또는 Ctrl + Shift + Q
 # 문구/글자 크기/이미지는 같은 폴더의 settings.json (설정 창에서 저장)
 param([string]$Info = "")
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -10,7 +10,7 @@ try {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
-    $settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = ""; Mode = "screen"; Url = "" }
+    $settings = [pscustomobject]@{ Message = "지금은 인증시간이 아닙니다"; Size = 100; ShowInfo = $true; ShowMessage = $true; Image = ""; Mode = "screen"; Url = ""; CloseButton = $true; AdminPin = "" }
     $settingsPath = Join-Path $dir "settings.json"
     if (Test-Path $settingsPath) {
         $saved = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -18,6 +18,59 @@ try {
     }
     # 이미 떠 있는 안내 화면/웹사이트가 있으면 닫고 새로 띄운다
     & (Join-Path $dir "screen_on.ps1")
+
+    $script:allowClose = $false
+    # 대기화면(이 창과 띄운 웹사이트)을 닫는다
+    function Close-Screen {
+        & (Join-Path $dir "screen_on.ps1")
+        $script:allowClose = $true
+        [System.Windows.Forms.Application]::Exit()
+    }
+
+    # 비밀번호가 설정돼 있으면 물어본다
+    function Confirm-Admin {
+        if (-not "$($settings.AdminPin)") { return $true }
+        $dialog = New-Object System.Windows.Forms.Form
+        $dialog.Text = "대기화면 끄기"
+        $dialog.FormBorderStyle = "FixedDialog"
+        $dialog.StartPosition = "CenterScreen"
+        $dialog.TopMost = $true
+        $dialog.MinimizeBox = $false
+        $dialog.MaximizeBox = $false
+        $dialog.Font = New-Object System.Drawing.Font("Malgun Gothic", 11)
+        $dialog.ClientSize = New-Object System.Drawing.Size(300, 120)
+        $label = New-Object System.Windows.Forms.Label
+        $label.Text = "관리자 비밀번호"
+        $label.SetBounds(15, 15, 270, 24)
+        $box = New-Object System.Windows.Forms.TextBox
+        $box.UseSystemPasswordChar = $true
+        $box.SetBounds(15, 42, 270, 28)
+        $ok = New-Object System.Windows.Forms.Button
+        $ok.Text = "확인"
+        $ok.DialogResult = "OK"
+        $ok.SetBounds(185, 80, 100, 32)
+        $dialog.Controls.AddRange(@($label, $box, $ok))
+        $dialog.AcceptButton = $ok
+        $result = $dialog.ShowDialog()
+        $pass = $result -eq "OK" -and $box.Text -eq "$($settings.AdminPin)"
+        if ($result -eq "OK" -and -not $pass) {
+            [System.Windows.Forms.MessageBox]::Show($dialog, "비밀번호가 틀렸습니다.", "대기화면 끄기") | Out-Null
+        }
+        $dialog.Dispose()
+        return $pass
+    }
+
+    function New-CloseButton {
+        $button = New-Object System.Windows.Forms.Button
+        $button.Text = "대기화면 끄기"
+        $button.Size = New-Object System.Drawing.Size(180, 44)
+        $button.FlatStyle = "Flat"
+        $button.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+        $button.ForeColor = [System.Drawing.Color]::White
+        $button.Font = New-Object System.Drawing.Font("Malgun Gothic", 12)
+        $button.Add_Click({ if (Confirm-Admin) { Close-Screen } })
+        return $button
+    }
 
     if ($settings.Mode -eq "url" -and $settings.Url) {
         # 전용 프로필로 크롬을 키오스크(전체 화면) 모드로 띄운다. 크롬이 없으면 Edge 로 띄운다.
@@ -54,6 +107,22 @@ public class TopWindow {
             [TopWindow]::SetWindowPos($w.MainWindowHandle, [IntPtr](-1), 0, 0, 0, 0, 3) | Out-Null
             [TopWindow]::SetForegroundWindow($w.MainWindowHandle) | Out-Null
         }
+        if (-not $settings.CloseButton) { return }
+
+        # 웹사이트 위 화면 아래쪽에 "대기화면 끄기" 버튼만 있는 작은 창을 띄운다
+        $pb = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bar = New-Object System.Windows.Forms.Form
+        $bar.Text = "ScreenTimerMessage"
+        $bar.FormBorderStyle = "None"
+        $bar.StartPosition = "Manual"
+        $bar.TopMost = $true
+        $bar.BackColor = [System.Drawing.Color]::Black
+        $bar.Bounds = New-Object System.Drawing.Rectangle(($pb.X + [int](($pb.Width - 184) / 2)), ($pb.Bottom - 90), 184, 48)
+        $closeButton = New-CloseButton
+        $closeButton.Location = New-Object System.Drawing.Point(2, 2)
+        $bar.Controls.Add($closeButton)
+        $bar.Add_FormClosing({ if (-not $script:allowClose) { $_.Cancel = $true } })
+        [System.Windows.Forms.Application]::Run($bar)
         return
     }
 
@@ -74,8 +143,6 @@ public class TopWindow {
     if (-not $image -and -not $message -and -not $infoText) { $message = "지금은 인증시간이 아닙니다" }
 
     $title = "ScreenTimerMessage"
-
-    $script:allowClose = $false
     $forms = foreach ($screen in [System.Windows.Forms.Screen]::AllScreens) {
         $b = $screen.Bounds
         $size = [Math]::Min($b.Width / 16, $b.Height / 12) * [double]$settings.Size / 100
@@ -97,6 +164,11 @@ public class TopWindow {
         $f.TopMost = $true
         $f.KeyPreview = $true
         $f.Tag = @{ Main = $mainFont; Info = $infoFont }
+        if ($settings.CloseButton) {
+            $closeButton = New-CloseButton
+            $closeButton.Location = New-Object System.Drawing.Point(([int](($b.Width - $closeButton.Width) / 2)), ($b.Height - 90))
+            $f.Controls.Add($closeButton)
+        }
 
         $f.Add_Paint({
             param($sender, $e)
@@ -143,10 +215,7 @@ public class TopWindow {
         # Alt+F4 등으로 닫히지 않게 막는다
         $f.Add_FormClosing({ if (-not $script:allowClose) { $_.Cancel = $true } })
         $f.Add_KeyDown({
-            if ($_.Control -and $_.Shift -and $_.KeyCode -eq "Q") {
-                $script:allowClose = $true
-                [System.Windows.Forms.Application]::Exit()
-            }
+            if ($_.Control -and $_.Shift -and $_.KeyCode -eq "Q") { Close-Screen }
         })
         $f
     }
@@ -156,7 +225,8 @@ public class TopWindow {
         $f.Invalidate()
     }
     $forms[0].Activate()
-    [System.Windows.Forms.Cursor]::Hide()
+    # 끄기 버튼이 없으면 마우스 커서를 숨긴다
+    if (-not $settings.CloseButton) { [System.Windows.Forms.Cursor]::Hide() }
     [System.Windows.Forms.Application]::Run()
 } catch {
     # 문제가 생기면 원인을 기록해 둔다
