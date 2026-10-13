@@ -1,5 +1,6 @@
-﻿# 사용법: powershell -ExecutionPolicy Bypass -File install.ps1 -Off 23:00 -On 07:30
+﻿# 사용법: powershell -ExecutionPolicy Bypass -File install.ps1 -On 09:00 -Off 18:00
 #         요일/예약 번호 지정: ... -Slot 2 -Days Monday,Wednesday,Friday
+#         -Days 는 켜는 요일이다.
 param(
     [Parameter(Mandatory = $true)][string]$Off,
     [Parameter(Mandatory = $true)][string]$On,
@@ -23,11 +24,11 @@ function Register-ScreenTask($name, $script, $time, $days) {
     Write-Host "등록 완료: $name -> $($days -join ',') $time"
 }
 
-# 켜는 시각이 끄는 시각보다 이르면(예: 23:00 끄고 07:30 켜기) 다음 날 켠다
-$onDays = $Days
-if ($On -le $Off) {
-    $onDays = $Days | ForEach-Object { [System.DayOfWeek](([int]$_ + 1) % 7) }
+# 끄는 시각이 켜는 시각보다 이르면(예: 07:30 켜고 01:00 끄기) 다음 날 끈다
+$offDays = $Days
+if ($Off -le $On) {
+    $offDays = $Days | ForEach-Object { [System.DayOfWeek](([int]$_ + 1) % 7) }
 }
 
-Register-ScreenTask "ScreenOff$Slot" "screen_off.ps1" $Off $Days
-Register-ScreenTask "ScreenOn$Slot"  "screen_on.ps1"  $On  $onDays
+Register-ScreenTask "ScreenOn$Slot"  "screen_on.ps1"  $On  $Days
+Register-ScreenTask "ScreenOff$Slot" "screen_off.ps1" $Off $offDays

@@ -20,28 +20,28 @@ function Format-Days($mask) {
 
 # 작업 스케줄러에 등록된 예약 목록을 읽어 온다
 function Get-Schedules {
-    Get-ScheduledTask -TaskName "ScreenOff*" -ErrorAction SilentlyContinue |
-        Where-Object { $_.TaskName -match '^ScreenOff(\d*)$' } |
+    Get-ScheduledTask -TaskName "ScreenOn*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.TaskName -match '^ScreenOn(\d*)$' } |
         ForEach-Object {
-            $slot = $_.TaskName -replace '^ScreenOff', ''
-            $offTrigger = $_.Triggers[0]
-            $onTask = Get-ScheduledTask -TaskName "ScreenOn$slot" -ErrorAction SilentlyContinue
+            $slot = $_.TaskName -replace '^ScreenOn', ''
+            $onTrigger = $_.Triggers[0]
+            $offTask = Get-ScheduledTask -TaskName "ScreenOff$slot" -ErrorAction SilentlyContinue
             # 요일 없이 매일 실행하는 예약(이전 버전)은 모든 요일로 취급
-            $mask = if ($offTrigger.DaysOfWeek) { [int]$offTrigger.DaysOfWeek } else { 127 }
+            $mask = if ($onTrigger.DaysOfWeek) { [int]$onTrigger.DaysOfWeek } else { 127 }
             [pscustomobject]@{
                 Slot = $slot
                 Days = Format-Days $mask
-                Off  = ([datetime]$offTrigger.StartBoundary).ToString("HH:mm")
-                On   = if ($onTask) { ([datetime]$onTask.Triggers[0].StartBoundary).ToString("HH:mm") } else { "--:--" }
+                On   = ([datetime]$onTrigger.StartBoundary).ToString("HH:mm")
+                Off  = if ($offTask) { ([datetime]$offTask.Triggers[0].StartBoundary).ToString("HH:mm") } else { "--:--" }
             }
-        } | Sort-Object Off
+        } | Sort-Object On
 }
 
 function Update-List {
     $script:schedules = @(Get-Schedules)
     $list.Items.Clear()
     foreach ($s in $script:schedules) {
-        [void]$list.Items.Add("$($s.Days)   $($s.Off) 끄기  →  $($s.On) 켜기")
+        [void]$list.Items.Add("$($s.Days)   $($s.On) 켜기  →  $($s.Off) 끄기")
     }
     if ($script:schedules.Count -eq 0) { [void]$list.Items.Add("(저장된 예약이 없습니다)") }
     $deleteButton.Enabled = $false
@@ -82,8 +82,8 @@ $form.ClientSize = New-Object System.Drawing.Size(430, 470)
 $newBox = New-Control GroupBox 15 10 400 160
 $newBox.Text = "새 예약"
 $today = (Get-Date).Date
-$offPicker = New-TimePicker 60 28 $today.AddHours(23)
-$onPicker = New-TimePicker 220 28 $today.AddHours(7.5)
+$onPicker = New-TimePicker 60 28 $today.AddHours(9)
+$offPicker = New-TimePicker 220 28 $today.AddHours(18)
 $dayBoxes = @()
 for ($d = 0; $d -lt 7; $d++) {
     $cb = New-Control CheckBox (15 + $d * 54) 70 52 24
@@ -93,8 +93,8 @@ for ($d = 0; $d -lt 7; $d++) {
 }
 $addButton = New-Control Button 15 110 370 34
 $addButton.Text = "+ 예약 추가"
-$newBox.Controls.AddRange(@((New-Label "끄기" 15 28), $offPicker,
-    (New-Label "켜기" 175 28), $onPicker, $addButton) + $dayBoxes)
+$newBox.Controls.AddRange(@((New-Label "켜기" 15 28), $onPicker,
+    (New-Label "끄기" 175 28), $offPicker, $addButton) + $dayBoxes)
 
 # ── 저장된 예약 목록 ──
 $listLabel = New-Label "저장된 예약" 15 180
@@ -115,7 +115,7 @@ $addButton.Add_Click({
         return
     }
     if ($off -eq $on) {
-        [System.Windows.Forms.MessageBox]::Show("끄기와 켜기 시각이 같습니다.", "알림") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show("켜기와 끄기 시각이 같습니다.", "알림") | Out-Null
         return
     }
     # 비어 있는 예약 번호를 찾는다

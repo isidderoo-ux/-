@@ -17,14 +17,14 @@ cd mac
 
 ## Windows
 
-**간편 사용(GUI):** `windows` 폴더의 `ScreenTimer.bat`을 더블클릭하면 설정 창이 열립니다. 끄기/켜기 시각과 요일을 고르고 **예약 추가**를 누르면 바로 등록되고, 목록에서 예약을 골라 **선택한 예약 삭제**로 지울 수 있습니다. 예약 개수에 제한은 없습니다. 켜기 시각이 끄기 시각보다 이르면(예: 23:00 끄기, 07:30 켜기) 다음 날 아침에 켭니다. 창은 설정할 때만 열면 되고, 닫아도 예약은 작업 스케줄러에서 계속 동작합니다.
+**간편 사용(GUI):** `windows` 폴더의 `ScreenTimer.bat`을 더블클릭하면 설정 창이 열립니다. 켜기/끄기 시각과 요일을 고르고 **예약 추가**를 누르면 바로 등록되고, 목록에서 예약을 골라 **선택한 예약 삭제**로 지울 수 있습니다. 예약 개수에 제한은 없습니다. 요일은 켜는 날 기준이며, 끄기 시각이 켜기 시각보다 이르면(예: 07:30 켜기, 01:00 끄기) 다음 날 새벽에 끕니다. 창은 설정할 때만 열면 되고, 닫아도 예약은 작업 스케줄러에서 계속 동작합니다.
 
 명령어로 쓰려면 PowerShell에서 실행합니다(NirCmd 같은 별도 프로그램 설치 불필요).
 
 ```powershell
 cd windows
-powershell -ExecutionPolicy Bypass -File install.ps1 -Off 23:00 -On 07:30
-powershell -ExecutionPolicy Bypass -File install.ps1 -Slot 2 -Off 12:00 -On 13:00 -Days Saturday,Sunday
+powershell -ExecutionPolicy Bypass -File install.ps1 -On 09:00 -Off 18:00
+powershell -ExecutionPolicy Bypass -File install.ps1 -Slot 2 -On 10:00 -Off 22:00 -Days Saturday,Sunday
 powershell -ExecutionPolicy Bypass -File uninstall.ps1
 ```
 
