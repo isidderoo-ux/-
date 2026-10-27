@@ -46,6 +46,7 @@
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/여기에_배포_ID/exec";
   const SCAN_COOLDOWN_MS = 5000;    // 동일 ID 재스캔 무시 시간
   const QR_REFRESH_SEC = 15;        // QR 타임스탬프 갱신 주기
+  const QR_MAX_AGE_MIN = 30;        // 스캔 시 허용하는 QR 유효 시간(분). 캡처 화면 재사용 방지
   const STORAGE_KEY = "qrPass.v1";
   const LOG_KEY = "qrPass.scanLog.v1";
 </script>
@@ -510,6 +511,13 @@ function onScanSuccess(decodedText) {
   const data = parsePayload(decodedText);
   if (!data) {
     showBanner("error", "유효하지 않은 출입증 QR입니다.");
+    return;
+  }
+
+  // 오래된 QR(캡처 화면 등) 거부. 기기 간 시계 오차를 고려해 미래 시각은 1분까지 허용
+  const age = Date.now() - (data.ts || 0);
+  if (!data.ts || age > QR_MAX_AGE_MIN * 60000 || age < -60000) {
+    showBanner("error", "만료된 QR입니다. 출입증 화면을 새로 열어주세요.");
     return;
   }
 
