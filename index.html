@@ -17,6 +17,7 @@
     #qrcode img, #qrcode canvas { width: 100% !important; height: auto !important; image-rendering: pixelated; }
     #reader { border: none !important; }
     #reader video { border-radius: 1rem; object-fit: cover; }
+    #reader.mirror video { transform: scaleX(-1); }
     #reader__dashboard_section_csr button { display: none; }
     @keyframes slideDown { from { transform: translateY(-120%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     .banner-in { animation: slideDown .25s ease-out; }
@@ -43,15 +44,18 @@
 <script>
   // ===================== 설정 상수 =====================
   const ADMIN_PIN = "0000";
-  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/여기에_배포_ID/exec";
+  // 선택 사항: 비워두면 태블릿에만 저장(CSV로 내려받기). 넣으면 구글 시트에도 백업 전송
+  const GOOGLE_SCRIPT_URL = "";
+  const DEFAULT_CAMERA = "user";    // "user" = 전면(거치대에 세운 태블릿), "environment" = 후면
   const SCAN_COOLDOWN_MS = 5000;    // 동일 ID 재스캔 무시 시간
   const QR_REFRESH_SEC = 15;        // QR 타임스탬프 갱신 주기
   const QR_MAX_AGE_MIN = 30;        // 스캔 시 허용하는 QR 유효 시간(분). 캡처 화면 재사용 방지
   const STORAGE_KEY = "qrPass.v1";
   const LOG_KEY = "qrPass.scanLog.v1";
+  const CAMERA_KEY = "qrPass.camera.v1";
 </script>
 
-<div class="max-w-md mx-auto min-h-screen flex flex-col">
+<div id="appShell" class="max-w-md mx-auto min-h-screen flex flex-col">
 
   <!-- 헤더 -->
   <header class="px-5 pt-6 pb-3">
@@ -60,7 +64,7 @@
   </header>
 
   <!-- 알림 배너 -->
-  <div id="banner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md z-50"></div>
+  <div id="banner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md md:max-w-2xl z-50"></div>
 
   <main class="flex-1 px-4 pb-28">
 
@@ -161,7 +165,7 @@
       </div>
 
       <!-- 스캐너 카드 -->
-      <div id="scannerCard" class="hidden space-y-4">
+      <div id="scannerCard" class="hidden space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 md:items-start">
         <div class="bg-white rounded-3xl shadow-sm p-4">
           <div class="flex items-center justify-between mb-3">
             <h2 class="font-bold">QR 스캐너</h2>
@@ -173,16 +177,23 @@
           <p id="camError" class="hidden mt-3 text-sm text-rose-600"></p>
           <div class="mt-3 flex gap-2">
             <button id="camToggleBtn" class="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white">카메라 중지</button>
-            <button id="adminLockBtn" class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600">잠금</button>
+            <button id="camFlipBtn" class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600">전면/후면</button>
+          </div>
+          <div class="mt-2 flex gap-2">
+            <button id="fullscreenBtn" class="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-medium text-slate-600">전체화면</button>
+            <button id="adminLockBtn" class="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-medium text-slate-600">잠금</button>
           </div>
         </div>
 
         <div class="bg-white rounded-3xl shadow-sm p-4">
           <div class="flex items-center justify-between mb-2">
-            <h2 class="font-bold">최근 출석자 <span id="logCount" class="text-indigo-600">0</span></h2>
-            <button id="clearLogBtn" class="text-xs text-slate-400 underline">목록 비우기</button>
+            <h2 class="font-bold">오늘 출석 <span id="todayCount" class="text-indigo-600">0</span><span class="text-sm font-normal text-slate-400"> / 전체 기록 <span id="logCount">0</span></span></h2>
+            <div class="flex items-center gap-3">
+              <button id="exportBtn" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">CSV 내려받기</button>
+              <button id="clearLogBtn" class="text-xs text-slate-400 underline">목록 비우기</button>
+            </div>
           </div>
-          <ul id="logList" class="divide-y divide-slate-100"></ul>
+          <ul id="logList" class="divide-y divide-slate-100 md:max-h-[70vh] md:overflow-y-auto"></ul>
           <p id="logEmpty" class="py-6 text-center text-sm text-slate-400">아직 스캔된 출석자가 없습니다.</p>
         </div>
       </div>
@@ -257,6 +268,8 @@ function switchTab(tab) {
   $("tab-user").classList.toggle("hidden", tab !== "user");
   $("tab-admin").classList.toggle("hidden", tab !== "admin");
   $("pageTitle").textContent = tab === "user" ? "내 출입증" : "QR 스캐너";
+  $("appShell").classList.toggle("max-w-md", tab !== "admin");
+  $("appShell").classList.toggle("max-w-5xl", tab === "admin");
   document.querySelectorAll(".tab-btn").forEach((btn) => {
     const active = btn.dataset.tab === tab;
     btn.classList.toggle("text-indigo-600", active);
@@ -404,6 +417,21 @@ let scannerBusy = false;
 const lastScanAt = new Map();   // id → timestamp (쿨타임)
 let scanLog = safeGet(LOG_KEY) || [];
 let audioCtx = null;
+let facing = safeGet(CAMERA_KEY) || DEFAULT_CAMERA;
+let wakeLock = null;
+
+/** 스캔 중에는 태블릿 화면이 꺼지지 않도록 유지 */
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && "wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } else if (!on && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch {}
+}
 
 function unlockAudio() {
   try {
@@ -459,6 +487,19 @@ $("camToggleBtn").addEventListener("click", () => {
   scannerRunning ? stopScanner() : startScanner();
 });
 
+$("camFlipBtn").addEventListener("click", async () => {
+  facing = facing === "user" ? "environment" : "user";
+  safeSet(CAMERA_KEY, facing);
+  await stopScanner();
+  startScanner();
+});
+
+$("fullscreenBtn").addEventListener("click", () => {
+  const el = document.documentElement;
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+});
+
 function setCamStatus(on, text) {
   $("camStatus").innerHTML =
     `<span class="w-2 h-2 rounded-full ${on ? "bg-emerald-500 pulse" : "bg-slate-300"}"></span> ${text}`;
@@ -473,13 +514,15 @@ async function startScanner() {
   try {
     if (!scanner) scanner = new Html5Qrcode("reader", { verbose: false });
     await scanner.start(
-      { facingMode: "environment" },
+      { facingMode: facing },
       { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
       onScanSuccess,
       () => {} // 프레임별 인식 실패는 무시
     );
     scannerRunning = true;
-    setCamStatus(true, "스캔 중");
+    $("reader").classList.toggle("mirror", facing === "user");
+    setCamStatus(true, facing === "user" ? "스캔 중 · 전면" : "스캔 중 · 후면");
+    keepAwake(true);
   } catch (err) {
     setCamStatus(false, "중지됨");
     $("camError").textContent = "카메라를 열 수 없습니다. 브라우저 카메라 권한과 HTTPS 접속 여부를 확인해주세요.";
@@ -495,6 +538,7 @@ async function stopScanner() {
   try { await scanner.stop(); } catch {}
   scannerRunning = false;
   setCamStatus(false, "중지됨");
+  keepAwake(false);
 }
 
 function parsePayload(text) {
@@ -528,11 +572,18 @@ function onScanSuccess(decodedText) {
   lastScanAt.set(data.id, now);
 
   const time = formatDateTime(new Date(now));
+
+  // 같은 날 이미 출석한 ID는 다시 기록하지 않음
+  const already = scanLog.find((r) => r.id === data.id && r.time.startsWith(todayStr()));
+  if (already) {
+    showBanner("info", `${data.name} (#${data.id})님은 이미 출석했습니다 (${already.time.split(" ")[1]})`);
+    return;
+  }
+
   playBeep();
   showBanner("success", `${data.name} (#${data.id})님 출석 완료!`);
 
   scanLog.unshift({ id: data.id, name: data.name, time });
-  scanLog = scanLog.slice(0, 200);
   safeSet(LOG_KEY, scanLog);
   renderLog();
 
@@ -540,10 +591,7 @@ function onScanSuccess(decodedText) {
 }
 
 function sendToSheet(record) {
-  if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("여기에_배포_ID")) {
-    console.warn("GOOGLE_SCRIPT_URL이 설정되지 않아 전송을 건너뜁니다.", record);
-    return;
-  }
+  if (!GOOGLE_SCRIPT_URL) return; // 태블릿 단독 운영
   fetch(GOOGLE_SCRIPT_URL, {
     method: "POST",
     mode: "no-cors",
@@ -580,11 +628,38 @@ function renderLog() {
     list.appendChild(li);
   });
   $("logCount").textContent = scanLog.length;
+  $("todayCount").textContent = scanLog.filter((r) => r.time.startsWith(todayStr())).length;
   $("logEmpty").classList.toggle("hidden", scanLog.length > 0);
 }
 
+function todayStr() {
+  return formatDateTime(new Date()).split(" ")[0];
+}
+
+/** 엑셀에서 한글이 깨지지 않도록 BOM 포함 CSV로 저장 */
+function exportCsv() {
+  if (!scanLog.length) {
+    showBanner("info", "내려받을 출석 기록이 없습니다.");
+    return;
+  }
+  const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const rows = [["날짜", "시간", "고유ID", "이름"]].concat(
+    scanLog.slice().reverse().map((r) => { const [d, t] = r.time.split(" "); return [d, t, r.id, r.name]; })
+  );
+  const csv = "\uFEFF" + rows.map((row) => row.map(esc).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `attendance_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$("exportBtn").addEventListener("click", exportCsv);
+
 $("clearLogBtn").addEventListener("click", () => {
-  if (!confirm("이 기기의 출석 목록을 비울까요? (구글 시트 데이터는 유지됩니다)")) return;
+  if (!confirm("이 태블릿의 출석 기록을 모두 지울까요? 먼저 CSV로 내려받았는지 확인하세요.")) return;
   scanLog = [];
   safeRemove(LOG_KEY);
   renderLog();
@@ -596,15 +671,19 @@ $("clearLogBtn").addEventListener("click", () => {
 let bannerTimer = null;
 function showBanner(type, message) {
   const b = $("banner");
-  const ok = type === "success";
+  const style = {
+    success: ["bg-emerald-600", "✅"],
+    info: ["bg-amber-500", "ℹ️"],
+    error: ["bg-rose-600", "⚠️"],
+  }[type] || ["bg-rose-600", "⚠️"];
   b.innerHTML = "";
   const box = document.createElement("div");
-  box.className = `banner-in flex items-center gap-3 rounded-2xl px-4 py-3.5 shadow-xl text-white ${ok ? "bg-emerald-600" : "bg-rose-600"}`;
+  box.className = `banner-in flex items-center gap-3 rounded-2xl px-4 py-3.5 md:px-6 md:py-5 shadow-xl text-white ${style[0]}`;
   const icon = document.createElement("span");
-  icon.className = "text-xl";
-  icon.textContent = ok ? "✅" : "⚠️";
+  icon.className = "text-xl md:text-3xl";
+  icon.textContent = style[1];
   const txt = document.createElement("p");
-  txt.className = "font-semibold";
+  txt.className = "font-semibold md:text-2xl";
   txt.textContent = message;
   box.append(icon, txt);
   b.appendChild(box);
@@ -615,7 +694,7 @@ function showBanner(type, message) {
 
 // 백그라운드 전환 시 카메라 해제, 복귀 시 재시작
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopScanner();
+  if (document.hidden) stopScanner(); // 화면 잠금 유지(wakeLock)도 함께 해제됨
   else if (currentTab === "admin" && adminUnlocked) startScanner();
 });
 
