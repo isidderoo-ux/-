@@ -232,17 +232,34 @@
       </div>
 
       <div id="listCard" class="hidden bg-white rounded-3xl shadow-sm p-4 space-y-3">
+        <div class="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 text-sm font-semibold">
+          <button data-mode="date" class="list-mode-btn rounded-lg py-2">날짜별</button>
+          <button data-mode="person" class="list-mode-btn rounded-lg py-2">개인별</button>
+        </div>
         <div class="flex items-center gap-2">
           <input id="listDate" type="date"
             class="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <select id="listRange"
+            class="hidden flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="4">최근 4회 모임</option>
+            <option value="8" selected>최근 8회 모임</option>
+            <option value="12">최근 12회 모임</option>
+            <option value="0">전체 기간</option>
+          </select>
           <button id="listRefreshBtn" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">새로고침</button>
         </div>
         <div class="flex items-end justify-between">
-          <p class="text-lg font-bold"><span id="listDateLabel"></span> 출석 <span id="listCount" class="text-indigo-600">0</span>명</p>
+          <p id="listHeadline" class="text-lg font-bold"></p>
           <p id="listUpdated" class="text-xs text-slate-400"></p>
         </div>
         <p id="listError" class="hidden text-sm text-rose-600"></p>
         <ul id="listRows" class="divide-y divide-slate-100"></ul>
+        <div id="personWrap" class="hidden -mx-4 overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead id="personHead" class="text-xs text-slate-500"></thead>
+            <tbody id="personBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
         <p id="listEmpty" class="hidden py-6 text-center text-sm text-slate-400">출석 기록이 없습니다.</p>
         <button id="listLogoutBtn" class="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-medium text-slate-600">닫기 (비밀번호 지우기)</button>
       </div>
@@ -770,6 +787,7 @@ $("exportBtn").addEventListener("click", exportCsv);
 // =====================================================================
 let viewPw = (() => { try { return sessionStorage.getItem("qrPass.viewPw"); } catch { return null; } })();
 let listLoading = false;
+let listMode = "date"; // "date" = 날짜별 명단, "person" = 개인별 출석 현황
 
 function setViewPw(pw) {
   viewPw = pw;
@@ -793,13 +811,18 @@ async function loadList() {
   if (!viewPw || listLoading) return;
   if (!GOOGLE_SCRIPT_URL) return showListLogin("구글 시트가 연결되지 않았습니다 (GOOGLE_SCRIPT_URL).");
   listLoading = true;
+  const reqMode = listMode;
   $("listRefreshBtn").textContent = "불러오는 중…";
   $("listLoginBtn").textContent = "확인 중…";
   try {
     const res = await fetch(GOOGLE_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "list", password: viewPw, date: $("listDate").value || todayStr() }),
+      body: JSON.stringify(
+        listMode === "person"
+          ? { action: "summary", password: viewPw, limit: Number($("listRange").value) }
+          : { action: "list", password: viewPw, date: $("listDate").value || todayStr() }
+      ),
     });
     const out = await res.json();
     if (!out.ok) {
@@ -809,7 +832,7 @@ async function loadList() {
     $("listLoginCard").classList.add("hidden");
     $("listCard").classList.remove("hidden");
     $("listError").classList.add("hidden");
-    renderList(out);
+    if (reqMode === listMode) reqMode === "person" ? renderSummary(out) : renderList(out);
   } catch (err) {
     console.error(err);
     if ($("listCard").classList.contains("hidden")) {
@@ -822,14 +845,24 @@ async function loadList() {
     listLoading = false;
     $("listRefreshBtn").textContent = "새로고침";
     $("listLoginBtn").textContent = "명단 보기";
+    if (reqMode !== listMode && viewPw) loadList(); // 불러오는 중에 탭을 바꾼 경우
+
   }
+}
+
+function setHeadline(prefix, count, suffix) {
+  const h = $("listHeadline");
+  h.textContent = prefix + " ";
+  const n = document.createElement("span");
+  n.className = "text-indigo-600";
+  n.textContent = count;
+  h.append(n, suffix);
+  $("listUpdated").textContent = formatTime(new Date()) + " 기준";
 }
 
 function renderList(out) {
   if (!$("listDate").value) $("listDate").value = out.date;
-  $("listDateLabel").textContent = out.date === todayStr() ? "오늘" : out.date;
-  $("listCount").textContent = out.count;
-  $("listUpdated").textContent = formatTime(new Date()) + " 기준";
+  setHeadline((out.date === todayStr() ? "오늘" : out.date) + " 출석", out.count, "명");
   const ul = $("listRows");
   ul.innerHTML = "";
   out.rows.forEach((r, i) => {
@@ -852,6 +885,76 @@ function renderList(out) {
   });
   $("listEmpty").classList.toggle("hidden", out.rows.length > 0);
 }
+
+/** 개인별 출석 현황: 행 = 사람, 열 = 모임 날짜(최신순), ● 출석 */
+function renderSummary(out) {
+  const range = Number($("listRange").value);
+  const attended = out.people.filter((p) => p.total > 0).length;
+  setHeadline(`${range ? "최근" : "전체"} ${out.dates.length}회 모임 ·`, attended, `명 출석 (전체 ${out.people.length}명)`);
+
+  const head = $("personHead");
+  head.innerHTML = "";
+  const hr = document.createElement("tr");
+  const th = (text, cls) => {
+    const c = document.createElement("th");
+    c.className = "px-2 py-2 font-medium whitespace-nowrap " + cls;
+    c.textContent = text;
+    return c;
+  };
+  hr.append(th("이름", "sticky left-0 bg-white pl-4 text-left"), th("출석", "text-center"));
+  out.dates.forEach((d) => hr.append(th(Number(d.slice(5, 7)) + "/" + Number(d.slice(8)), "text-center tabular-nums")));
+  head.appendChild(hr);
+
+  const body = $("personBody");
+  body.innerHTML = "";
+  out.people.forEach((p) => {
+    const tr = document.createElement("tr");
+    const name = document.createElement("td");
+    name.className = "sticky left-0 bg-white pl-4 pr-2 py-2.5 whitespace-nowrap";
+    const nm = document.createElement("p");
+    nm.className = "font-semibold";
+    nm.textContent = p.name;
+    const id = document.createElement("p");
+    id.className = "font-mono text-[11px] text-slate-400";
+    id.textContent = "#" + p.id;
+    name.append(nm, id);
+    const total = document.createElement("td");
+    total.className = "px-2 text-center font-semibold tabular-nums whitespace-nowrap";
+    total.textContent = `${p.total}/${out.dates.length}`;
+    tr.append(name, total);
+    p.attended.forEach((a) => {
+      const td = document.createElement("td");
+      td.className = "px-2 text-center " + (a ? "text-indigo-600" : "text-slate-200");
+      td.textContent = a ? "●" : "○";
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+  $("listEmpty").classList.toggle("hidden", out.people.length > 0);
+}
+
+function setListMode(mode) {
+  listMode = mode;
+  document.querySelectorAll(".list-mode-btn").forEach((btn) => {
+    const active = btn.dataset.mode === mode;
+    btn.classList.toggle("bg-white", active);
+    btn.classList.toggle("shadow-sm", active);
+    btn.classList.toggle("text-slate-900", active);
+    btn.classList.toggle("text-slate-500", !active);
+  });
+  const person = mode === "person";
+  $("listDate").classList.toggle("hidden", person);
+  $("listRange").classList.toggle("hidden", !person);
+  $("listRows").classList.toggle("hidden", person);
+  $("personWrap").classList.toggle("hidden", !person);
+  $("listHeadline").textContent = "";
+  $("listEmpty").classList.add("hidden");
+  if (currentTab === "list") loadList();
+}
+document.querySelectorAll(".list-mode-btn").forEach((btn) =>
+  btn.addEventListener("click", () => setListMode(btn.dataset.mode))
+);
+$("listRange").addEventListener("change", loadList);
 
 $("listLoginForm").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -917,6 +1020,7 @@ document.addEventListener("visibilitychange", () => {
   }
   switchTab("user");
   flushQueue(); // 이전에 못 보낸 기록이 있으면 재전송
+  setListMode("date");
   updateFullscreenBtn();
 })();
 </script>
