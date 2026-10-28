@@ -4,7 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#4f46e5" />
-  <title>QR 출결 시스템</title>
+  <title>QR 출석 체크</title>
+  <meta name="description" content="출입증 한 번 발급하고, QR로 간편하게 출석하세요" />
+
+  <!-- 카카오톡·문자 등 링크 미리보기 (이미지는 절대 주소여야 함) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://attend.iasis-ministry.org/" />
+  <meta property="og:title" content="QR 출석 체크" />
+  <meta property="og:description" content="출입증 한 번 발급하고, QR로 간편하게 출석하세요" />
+  <meta property="og:image" content="https://attend.iasis-ministry.org/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="ko_KR" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- 아이콘 / 홈 화면에 추가 -->
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="apple-mobile-web-app-title" content="출석 체크" />
 
   <!-- CDN: Tailwind CSS / qrcodejs / html5-qrcode -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -34,7 +52,7 @@
 
 <script>
   // ===================== 설정 상수 =====================
-  const ADMIN_PIN = "0000";
+  const ADMIN_PIN = "2580";
   // Apps Script 웹 앱 URL(…/exec). 비워두면 태블릿에만 저장(CSV로 내려받기)
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzTlCC6Db0nvGEUzlFMcWYKgm6G4e2GSVJE6ariRTzHS4lwhRFUAEVvNc_d2ehsJrks1A/exec";
   // 구글 시트 링크. 넣으면 스캐너 화면에 [구글 시트 열기] 버튼 표시
