@@ -15,8 +15,15 @@
  *    (링크 끝의 #gid=… 덕분에 관리자는 바로 "오늘 출석" 탭으로 들어갑니다)
  *    같은 링크를 index.html 의 SHEET_VIEW_URL 에 넣으면 스캐너 화면에 바로가기 버튼이 생깁니다.
  *
+ * 7. 아래 VIEW_PASSWORD 를 원하는 비밀번호로 바꿉니다. 사이트의 [출석 명단] 탭에서 이 비밀번호를 넣으면
+ *    시트를 공유하지 않아도 명단을 볼 수 있습니다. (비밀번호는 Apps Script 안에만 있고 사이트 소스에는 없습니다)
+ *
  * ※ 코드를 고친 뒤에는 [배포] > [배포 관리] > 수정(연필) > 버전 "새 버전" 으로 다시 배포해야 반영됩니다.
  */
+
+// ⚠️ 명단 보기 비밀번호: Apps Script 편집기에서만 바꾸세요. (GitHub의 apps-script.gs 에는 실제 비밀번호를 올리지 마세요)
+//    6자리 이상 추천. 비밀번호를 10번 연속 틀리면 10분간 명단 보기가 잠깁니다.
+const VIEW_PASSWORD = "여기에_비밀번호";
 
 const SHEET_NAME = "출석";
 const HEADERS = ["날짜", "시간", "고유ID", "이름", "중복확인키"];
@@ -26,6 +33,8 @@ function doPost(e) {
   lock.waitLock(10000); // 동시에 들어온 요청이 줄을 꼬지 않도록 순서대로 처리
   try {
     const d = JSON.parse(e.postData.contents);
+    if (d.action === "list") return json(listAttendance(d));
+
     const id = String(d.id || "");
     const time = String(d.time || "");
     if (!/^U-[0-9A-F]{6}$/.test(id) || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(time)) {
@@ -105,6 +114,33 @@ function setupViews() {
     s.setFrozenRows(1);
     s.setColumnWidths(1, 2, 120);
   }
+}
+
+/** 비밀번호 확인 후 해당 날짜(기본: 오늘)의 출석 명단을 돌려줌 */
+function listAttendance(d) {
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get("viewFails") || 0);
+  if (fails >= 10) return { ok: false, error: "locked" };
+  if (!VIEW_PASSWORD || VIEW_PASSWORD === "여기에_비밀번호") return { ok: false, error: "not_configured" };
+  if (String(d.password || "") !== VIEW_PASSWORD) {
+    cache.put("viewFails", String(fails + 1), 600);
+    return { ok: false, error: "auth" };
+  }
+  cache.remove("viewFails");
+
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(d.date || "")
+    ? d.date
+    : Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const rows = [];
+  if (sheet && sheet.getLastRow() > 1) {
+    const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getDisplayValues();
+    values.forEach((r) => {
+      if (r[0] === date) rows.push({ time: r[1], id: r[2], name: String(r[3]).replace(/^'/, "") });
+    });
+  }
+  rows.sort((a, b) => a.time.localeCompare(b.time));
+  return { ok: true, date: date, count: rows.length, rows: rows };
 }
 
 /** 수식으로 해석될 수 있는 값(=, +, -, @ 로 시작)을 일반 텍스트로 저장 */

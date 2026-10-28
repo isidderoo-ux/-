@@ -37,9 +37,11 @@
   const ADMIN_PIN = "0000";
   // Apps Script 웹 앱 URL(…/exec). 비워두면 태블릿에만 저장(CSV로 내려받기)
   const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzTlCC6Db0nvGEUzlFMcWYKgm6G4e2GSVJE6ariRTzHS4lwhRFUAEVvNc_d2ehsJrks1A/exec";
-  // 관리자가 볼 구글 시트 공유 링크. 넣으면 스캐너 화면에 [구글 시트 열기] 버튼 표시
-  const SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1ncyJAjKYzAAZ0zgGAEQByM9HE1lGYSbyz9qd3mkkJXQ/edit?usp=sharing";
+  // 구글 시트 링크. 넣으면 스캐너 화면에 [구글 시트 열기] 버튼 표시
+  // (이 파일은 누구나 볼 수 있으므로, 시트가 "제한됨"으로 공유된 경우에만 넣으세요)
+  const SHEET_VIEW_URL = "";
   const SYNC_RETRY_SEC = 15;        // 전송 실패 시 재시도 간격
+  const LIST_REFRESH_SEC = 30;      // [출석 명단] 자동 새로고침 간격
   const DEFAULT_CAMERA = "user";    // "user" = 전면(거치대에 세운 태블릿), "environment" = 후면
   const SCAN_COOLDOWN_MS = 5000;    // 동일 ID 재스캔 무시 시간
   const QR_REFRESH_SEC = 15;        // QR 타임스탬프 갱신 주기
@@ -197,11 +199,46 @@
         </div>
       </div>
     </section>
+    <!-- ===================== 출석 명단 탭 ===================== -->
+    <section id="tab-list" class="hidden space-y-4">
+
+      <div id="listLoginCard" class="bg-white rounded-3xl shadow-sm p-6 space-y-5">
+        <div class="text-center">
+          <div class="mx-auto w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl">📋</div>
+          <h2 class="mt-3 text-lg font-bold">출석 명단 보기</h2>
+          <p class="text-sm text-slate-500">담당자 비밀번호를 입력하세요.</p>
+        </div>
+        <form id="listLoginForm" class="space-y-3">
+          <input id="inViewPw" type="password" autocomplete="current-password" placeholder="비밀번호"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <p id="listLoginError" class="hidden text-center text-sm text-rose-600"></p>
+          <button id="listLoginBtn" type="submit" class="w-full rounded-xl bg-slate-900 py-3.5 text-white font-semibold active:scale-[.98] transition">
+            명단 보기
+          </button>
+        </form>
+      </div>
+
+      <div id="listCard" class="hidden bg-white rounded-3xl shadow-sm p-4 space-y-3">
+        <div class="flex items-center gap-2">
+          <input id="listDate" type="date"
+            class="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <button id="listRefreshBtn" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">새로고침</button>
+        </div>
+        <div class="flex items-end justify-between">
+          <p class="text-lg font-bold"><span id="listDateLabel"></span> 출석 <span id="listCount" class="text-indigo-600">0</span>명</p>
+          <p id="listUpdated" class="text-xs text-slate-400"></p>
+        </div>
+        <p id="listError" class="hidden text-sm text-rose-600"></p>
+        <ul id="listRows" class="divide-y divide-slate-100"></ul>
+        <p id="listEmpty" class="hidden py-6 text-center text-sm text-slate-400">출석 기록이 없습니다.</p>
+        <button id="listLogoutBtn" class="w-full rounded-xl border border-slate-300 py-2.5 text-sm font-medium text-slate-600">닫기 (비밀번호 지우기)</button>
+      </div>
+    </section>
   </main>
 
   <!-- 하단 탭 바 -->
   <nav class="fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t border-slate-200 safe-bottom">
-    <div class="max-w-md mx-auto grid grid-cols-2">
+    <div class="max-w-md mx-auto grid grid-cols-3">
       <button data-tab="user" class="tab-btn flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14 10h4M14 13h3"/></svg>
         내 출입증
@@ -209,6 +246,10 @@
       <button data-tab="admin" class="tab-btn flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M4 12h16"/></svg>
         QR 스캐너
+      </button>
+      <button data-tab="list" class="tab-btn flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM8.5 11h7M8.5 14.5h7M8.5 18h4"/></svg>
+        출석 명단
       </button>
     </div>
   </nav>
@@ -266,7 +307,8 @@ function switchTab(tab) {
   currentTab = tab;
   $("tab-user").classList.toggle("hidden", tab !== "user");
   $("tab-admin").classList.toggle("hidden", tab !== "admin");
-  $("pageTitle").textContent = tab === "user" ? "내 출입증" : "QR 스캐너";
+  $("tab-list").classList.toggle("hidden", tab !== "list");
+  $("pageTitle").textContent = { user: "내 출입증", admin: "QR 스캐너", list: "출석 명단" }[tab];
   $("appShell").classList.toggle("max-w-md", tab !== "admin");
   $("appShell").classList.toggle("max-w-5xl", tab === "admin");
   document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -280,6 +322,7 @@ function switchTab(tab) {
   } else {
     stopScanner();
   }
+  if (tab === "list" && viewPw) loadList();
 }
 
 document.querySelectorAll(".tab-btn").forEach((btn) =>
@@ -717,6 +760,113 @@ $("clearLogBtn").addEventListener("click", () => {
   safeRemove(LOG_KEY);
   renderLog();
 });
+
+// =====================================================================
+// 출석 명단 (비밀번호는 Apps Script에서 확인, 시트 공유 불필요)
+// =====================================================================
+let viewPw = (() => { try { return sessionStorage.getItem("qrPass.viewPw"); } catch { return null; } })();
+let listLoading = false;
+
+function setViewPw(pw) {
+  viewPw = pw;
+  try { pw ? sessionStorage.setItem("qrPass.viewPw", pw) : sessionStorage.removeItem("qrPass.viewPw"); } catch {}
+}
+
+function showListLogin(message) {
+  $("listCard").classList.add("hidden");
+  $("listLoginCard").classList.remove("hidden");
+  $("listLoginError").textContent = message || "";
+  $("listLoginError").classList.toggle("hidden", !message);
+}
+
+const LIST_ERRORS = {
+  auth: "비밀번호가 올바르지 않습니다.",
+  locked: "비밀번호를 여러 번 틀려 10분간 잠겼습니다. 잠시 후 다시 시도하세요.",
+  not_configured: "Apps Script에 명단 비밀번호(VIEW_PASSWORD)가 설정되지 않았습니다.",
+};
+
+async function loadList() {
+  if (!viewPw || listLoading) return;
+  if (!GOOGLE_SCRIPT_URL) return showListLogin("구글 시트가 연결되지 않았습니다 (GOOGLE_SCRIPT_URL).");
+  listLoading = true;
+  $("listRefreshBtn").textContent = "불러오는 중…";
+  $("listLoginBtn").textContent = "확인 중…";
+  try {
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "list", password: viewPw, date: $("listDate").value || todayStr() }),
+    });
+    const out = await res.json();
+    if (!out.ok) {
+      setViewPw(null);
+      return showListLogin(LIST_ERRORS[out.error] || "명단을 불러오지 못했습니다.");
+    }
+    $("listLoginCard").classList.add("hidden");
+    $("listCard").classList.remove("hidden");
+    $("listError").classList.add("hidden");
+    renderList(out);
+  } catch (err) {
+    console.error(err);
+    if ($("listCard").classList.contains("hidden")) {
+      showListLogin("서버에 연결하지 못했습니다. 인터넷 연결을 확인하세요.");
+    } else {
+      $("listError").textContent = "새로고침 실패 — 인터넷 연결을 확인하세요.";
+      $("listError").classList.remove("hidden");
+    }
+  } finally {
+    listLoading = false;
+    $("listRefreshBtn").textContent = "새로고침";
+    $("listLoginBtn").textContent = "명단 보기";
+  }
+}
+
+function renderList(out) {
+  if (!$("listDate").value) $("listDate").value = out.date;
+  $("listDateLabel").textContent = out.date === todayStr() ? "오늘" : out.date;
+  $("listCount").textContent = out.count;
+  $("listUpdated").textContent = formatTime(new Date()) + " 기준";
+  const ul = $("listRows");
+  ul.innerHTML = "";
+  out.rows.forEach((r, i) => {
+    const li = document.createElement("li");
+    li.className = "flex items-center gap-3 py-3";
+    const no = document.createElement("span");
+    no.className = "w-7 text-right text-sm text-slate-400 tabular-nums";
+    no.textContent = i + 1;
+    const nm = document.createElement("p");
+    nm.className = "flex-1 font-semibold";
+    nm.textContent = r.name;
+    const id = document.createElement("span");
+    id.className = "font-mono text-xs text-slate-400";
+    id.textContent = "#" + r.id;
+    const tm = document.createElement("span");
+    tm.className = "w-20 text-right font-mono text-sm text-slate-500 tabular-nums";
+    tm.textContent = r.time;
+    li.append(no, nm, id, tm);
+    ul.appendChild(li);
+  });
+  $("listEmpty").classList.toggle("hidden", out.rows.length > 0);
+}
+
+$("listLoginForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const pw = $("inViewPw").value;
+  if (!pw) return;
+  $("inViewPw").value = "";
+  setViewPw(pw);
+  loadList();
+});
+$("listRefreshBtn").addEventListener("click", loadList);
+$("listDate").addEventListener("change", loadList);
+$("listLogoutBtn").addEventListener("click", () => {
+  setViewPw(null);
+  $("listDate").value = "";
+  showListLogin();
+});
+setInterval(() => {
+  if (currentTab === "list" && viewPw && !document.hidden) loadList();
+}, LIST_REFRESH_SEC * 1000);
 
 // =====================================================================
 // 알림 배너
