@@ -1,0 +1,60 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=block" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{word-break:keep-all;width:1920px;height:1080px;background:#0f1419;color:#e8edf2;font-family:'Noto Sans KR','WenQuanYi Zen Hei',sans-serif;padding:56px 64px}
+header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:40px}
+h1{font-size:54px;font-weight:900;letter-spacing:-1px}
+h1 span{color:#ff4d4f}
+.sub{font-size:24px;color:#9aa7b4;margin-top:8px}
+.flow{font-size:22px;color:#cfd8e1;background:#1b232c;border:1px solid #2c3743;border-radius:12px;padding:14px 22px;text-align:right;line-height:1.6}
+.flow b{color:#fff}
+.time{display:flex;align-items:center;margin:0 0 18px}
+.time .bar{flex:1;height:4px;background:linear-gradient(90deg,#3aa0ff,#ff4d4f)}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:22px}
+.card{background:#1b232c;border:1px solid #2c3743;border-radius:18px;padding:26px 24px;height:540px;display:flex;flex-direction:column}
+.t{font-size:22px;font-weight:700;color:#3aa0ff}
+.card:nth-child(5) .t{color:#ff4d4f}
+.n{font-size:20px;color:#7d8a97;margin-top:14px}
+.h{font-size:32px;font-weight:900;margin:2px 0 20px;line-height:1.25;min-height:80px}
+.pass{min-height:78px;background:#12301f;border:1px solid #1f6b3d;color:#8fe3ad;border-radius:10px;padding:12px 14px;font-size:19px;line-height:1.45;margin-bottom:20px;font-weight:500}
+ul{list-style:none}
+li{font-size:21px;line-height:1.45;padding-left:38px;position:relative;margin-bottom:14px;color:#dbe3ea}
+li:before{content:"";position:absolute;left:0;top:3px;width:22px;height:22px;border:2.5px solid #5c6b7a;border-radius:5px}
+.go{margin-top:22px;text-align:center;font-size:28px;font-weight:900;background:#12301f;border:1px solid #1f6b3d;color:#8fe3ad;border-radius:12px;padding:14px}
+.fix{margin-top:22px;display:flex;gap:16px;align-items:stretch}
+.fix .lbl{background:#ff4d4f;color:#fff;font-weight:900;font-size:22px;border-radius:12px;padding:0 22px;display:flex;align-items:center;white-space:nowrap}
+.fix .it{flex:1;background:#1b232c;border:1px solid #2c3743;border-radius:12px;padding:14px 16px;font-size:18px;line-height:1.45;color:#cfd8e1}
+.fix .it b{color:#fff;display:block;font-size:19px}
+</style></head><body>
+<header>
+ <div><h1>본방송 <span>30분 전</span> 테스트 점검</h1><div class="sub">위에서부터 순서대로 체크 · 5단계 모두 통과하면 본방송 시작</div></div>
+ <div class="flow">영상 <b>캡처카드</b> + 음향 <b>믹서</b> → <b>OBS</b> → 송출 링크<br>확인: <b>VU미터 사이트</b></div>
+</header>
+<div class="time"><div class="bar"></div></div>
+<div class="grid">
+ <div class="card"><div class="t">T-30분</div><div class="n">STEP 1</div><div class="h">네트워크</div>
+  <div class="pass">통과: 업로드 ≥ 송출 비트레이트 × 1.5</div>
+  <ul><li>유선 LAN 연결 (Wi-Fi X)</li><li>속도 측정<br>업로드 ____ Mbps</li><li>다른 기기 대용량 전송·업데이트 중지</li><li>비상 회선(핫스팟) 준비</li></ul></div>
+ <div class="card"><div class="t">T-25분</div><div class="n">STEP 2</div><div class="h">영상 소스<br>캡처카드</div>
+  <div class="pass">통과: OBS 미리보기에 영상 정상 출력</div>
+  <ul><li>원본 장비 전원·HDMI 출력 ON</li><li>캡처카드 PC 본체 포트 직결</li><li>해상도·FPS가 OBS 설정과 일치</li><li>다른 앱이 캡처카드 점유 X</li></ul></div>
+ <div class="card"><div class="t">T-20분</div><div class="n">STEP 3</div><div class="h">음향 소스<br>믹서</div>
+  <div class="pass">통과: OBS 미터 -20 ~ -10 dB, 빨간색(0 dB) X</div>
+  <ul><li>믹서 채널·마스터 뮤트 해제</li><li>OBS 입력 장치 = 믹서</li><li>캡처카드·데스크톱 오디오 음소거 (이중 소리 방지)</li><li>영상-소리 싱크 일치</li></ul></div>
+ <div class="card"><div class="t">T-15분</div><div class="n">STEP 4</div><div class="h">OBS<br>송출 설정</div>
+  <div class="pass">통과: 서버 URL·스트림 키 = 오늘 송출 링크</div>
+  <ul><li>송출 링크 변경·재발급 여부 확인</li><li>비트레이트 ____ Kbps (CBR)</li><li>키프레임 2초 · 48kHz</li><li>백업 녹화 경로·용량 확인</li></ul></div>
+ <div class="card"><div class="t">T-10분</div><div class="n">STEP 5</div><div class="h">테스트 송출<br>VU미터 확인</div>
+  <div class="pass">통과: 사이트에서 영상 + L/R 미터 정상</div>
+  <ul><li>OBS 하단 LIVE · 드롭 프레임 0%</li><li>사이트 영상 끊김 없음</li><li>VU미터 L/R 둘 다 움직임</li><li>지연 ____ 초 기록 · 5분 관찰</li></ul></div>
+</div>
+<div class="go">T-0 · 5단계 모두 통과 → 장면 전환 후 본방송 시작</div>
+<div class="fix"><div class="lbl">문제 시</div>
+ <div class="it"><b>검은 화면</b>소스 비활성화→활성화, USB 재연결</div>
+ <div class="it"><b>미터 무반응</b>믹서 뮤트·OBS 입력 장치</div>
+ <div class="it"><b>송출 연결 실패</b>URL·스트림 키 재확인</div>
+ <div class="it"><b>드롭 프레임·끊김</b>비트레이트↓, 트래픽 중지, 비상 회선</div>
+ <div class="it"><b>VU미터 한쪽만</b>믹서 출력 채널·모노/스테레오</div>
+</div>
+</body></html>
