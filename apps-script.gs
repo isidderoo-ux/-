@@ -9,7 +9,10 @@
  *      - 액세스 권한이 있는 사용자: 모든 사용자
  *    → [배포] 후 권한 승인, 표시되는 "웹 앱 URL"(…/exec)을 복사합니다.
  * 4. index.html 상단의 GOOGLE_SCRIPT_URL 에 그 URL을 넣습니다.
- * 5. 관리자에게는 시트 우측 상단 [공유] 에서 "보기 권한"으로 링크를 공유하고,
+ * 5. 편집기 상단에서 함수 "setupViews" 를 골라 [실행] → "오늘 출석", "날짜별 요약" 탭이 생깁니다.
+ *    (첫 출석이 기록될 때도 자동으로 만들어집니다)
+ * 6. "오늘 출석" 탭을 연 상태에서 [공유] → 관리자에게 "뷰어" 권한으로 공유하고 링크를 복사합니다.
+ *    (링크 끝의 #gid=… 덕분에 관리자는 바로 "오늘 출석" 탭으로 들어갑니다)
  *    같은 링크를 index.html 의 SHEET_VIEW_URL 에 넣으면 스캐너 화면에 바로가기 버튼이 생깁니다.
  *
  * ※ 코드를 고친 뒤에는 [배포] > [배포 관리] > 수정(연필) > 버전 "새 버전" 으로 다시 배포해야 반영됩니다.
@@ -60,8 +63,48 @@ function getSheet() {
     sheet.setFrozenRows(1);
     // 날짜·시간이 자동 변환되지 않도록 텍스트 서식 지정
     sheet.getRange("A:B").setNumberFormat("@");
+    sheet.hideColumns(5); // 중복확인키는 내부용
   }
+  setupViews();
   return sheet;
+}
+
+/**
+ * 관리자용 보기 탭을 만듭니다 (이미 있으면 건너뜀). 수식이라 기록이 들어오면 자동 갱신됩니다.
+ *  - "오늘 출석": 오늘 인원 수 + 명단(시간순)
+ *  - "날짜별 요약": 날짜별 출석 인원
+ * Apps Script 편집기에서 이 함수를 직접 [실행]해도 됩니다.
+ */
+function setupViews() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const src = "'" + SHEET_NAME + "'";
+  const today = 'TEXT(TODAY(),"yyyy-mm-dd")';
+
+  if (!ss.getSheetByName("오늘 출석")) {
+    const v = ss.insertSheet("오늘 출석", 0); // 첫 번째 탭으로
+    v.getRange("A1").setFormula(
+      '="📋 "&' + today + '&"  출석 "&COUNTIF(' + src + "!A2:A," + today + ')&"명"'
+    );
+    v.getRange("A1").setFontSize(16).setFontWeight("bold");
+    v.getRange("A3:C3").setValues([["시간", "이름", "고유ID"]]).setFontWeight("bold").setBackground("#eef2ff");
+    v.getRange("A4").setFormula(
+      "=IFERROR(SORT(FILTER({" + src + "!B2:B," + src + "!D2:D," + src + "!C2:C}," +
+        src + "!A2:A=" + today + "),1,TRUE),\"아직 출석자가 없습니다\")"
+    );
+    v.setFrozenRows(3);
+    v.setColumnWidths(1, 3, 120);
+  }
+
+  if (!ss.getSheetByName("날짜별 요약")) {
+    const s = ss.insertSheet("날짜별 요약", 1);
+    s.getRange("A1").setFormula(
+      "=IFERROR(QUERY(" + src + "!A2:C,\"select A, count(C) where A is not null group by A order by A desc " +
+        "label A '날짜', count(C) '출석 인원'\",0),\"아직 기록이 없습니다\")"
+    );
+    s.getRange("A1:B1").setFontWeight("bold").setBackground("#eef2ff");
+    s.setFrozenRows(1);
+    s.setColumnWidths(1, 2, 120);
+  }
 }
 
 /** 수식으로 해석될 수 있는 값(=, +, -, @ 로 시작)을 일반 텍스트로 저장 */
