@@ -9,7 +9,7 @@
  *      - 액세스 권한이 있는 사용자: 모든 사용자
  *    → [배포] 후 권한 승인, 표시되는 "웹 앱 URL"(…/exec)을 복사합니다.
  * 4. index.html 상단의 GOOGLE_SCRIPT_URL 에 그 URL을 넣습니다.
- * 5. 편집기 상단에서 함수 "setupViews" 를 골라 [실행] → "오늘 출석", "날짜별 요약" 탭이 생깁니다.
+ * 5. 편집기 상단에서 함수 "setupViews" 를 골라 [실행] → "오늘 출석", "날짜별 요약", "개인별 출석" 탭이 생깁니다.
  *    (첫 출석이 기록될 때도 자동으로 만들어집니다)
  * 6. "오늘 출석" 탭을 연 상태에서 [공유] → 관리자에게 "뷰어" 권한으로 공유하고 링크를 복사합니다.
  *    (링크 끝의 #gid=… 덕분에 관리자는 바로 "오늘 출석" 탭으로 들어갑니다)
@@ -34,6 +34,7 @@ function doPost(e) {
   try {
     const d = JSON.parse(e.postData.contents);
     if (d.action === "list") return json(listAttendance(d));
+    if (d.action === "summary") return json(personSummary(d));
 
     const id = String(d.id || "");
     const time = String(d.time || "");
@@ -55,6 +56,7 @@ function doPost(e) {
     }
 
     sheet.appendRow([date, time.slice(11), id, safeText(d.name), key]);
+    rebuildPersonSheet();
     return json({ ok: true });
   } catch (err) {
     return json({ ok: false, error: String(err) });
@@ -82,6 +84,7 @@ function getSheet() {
  * 관리자용 보기 탭을 만듭니다 (이미 있으면 건너뜀). 수식이라 기록이 들어오면 자동 갱신됩니다.
  *  - "오늘 출석": 오늘 인원 수 + 명단(시간순)
  *  - "날짜별 요약": 날짜별 출석 인원
+ *  - "개인별 출석": 사람별 날짜마다 ✓ 표시와 합계 (rebuildPersonSheet 가 채움)
  * Apps Script 편집기에서 이 함수를 직접 [실행]해도 됩니다.
  */
 function setupViews() {
@@ -104,6 +107,8 @@ function setupViews() {
     v.setColumnWidths(1, 3, 120);
   }
 
+  if (!ss.getSheetByName("개인별 출석")) rebuildPersonSheet();
+
   if (!ss.getSheetByName("날짜별 요약")) {
     const s = ss.insertSheet("날짜별 요약", 1);
     s.getRange("A1").setFormula(
@@ -117,16 +122,23 @@ function setupViews() {
 }
 
 /** 비밀번호 확인 후 해당 날짜(기본: 오늘)의 출석 명단을 돌려줌 */
-function listAttendance(d) {
+/** 명단 비밀번호 확인. 틀리면 오류 코드, 맞으면 null. 10번 연속 틀리면 10분 잠금 */
+function checkPassword(d) {
   const cache = CacheService.getScriptCache();
   const fails = Number(cache.get("viewFails") || 0);
-  if (fails >= 10) return { ok: false, error: "locked" };
-  if (!VIEW_PASSWORD || VIEW_PASSWORD === "여기에_비밀번호") return { ok: false, error: "not_configured" };
+  if (fails >= 10) return "locked";
+  if (!VIEW_PASSWORD || VIEW_PASSWORD === "여기에_비밀번호") return "not_configured";
   if (String(d.password || "") !== VIEW_PASSWORD) {
     cache.put("viewFails", String(fails + 1), 600);
-    return { ok: false, error: "auth" };
+    return "auth";
   }
   cache.remove("viewFails");
+  return null;
+}
+
+function listAttendance(d) {
+  const error = checkPassword(d);
+  if (error) return { ok: false, error: error };
 
   const date = /^\d{4}-\d{2}-\d{2}$/.test(d.date || "")
     ? d.date
@@ -141,6 +153,67 @@ function listAttendance(d) {
   }
   rows.sort((a, b) => a.time.localeCompare(b.time));
   return { ok: true, date: date, count: rows.length, rows: rows };
+}
+
+/** 출석 기록 전체 → 날짜 목록(오름차순)과 사람별 출석 날짜 */
+function collectAttendance() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const dates = {};
+  const people = {};
+  if (sheet && sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, 4).getDisplayValues().forEach((r) => {
+      const date = r[0], id = r[2];
+      if (!date || !id) return;
+      dates[date] = true;
+      if (!people[id]) people[id] = { id: id, name: "", dates: {} };
+      people[id].name = String(r[3]).replace(/^'/, ""); // 가장 최근 이름
+      people[id].dates[date] = true;
+    });
+  }
+  return { dates: Object.keys(dates).sort(), people: Object.keys(people).map((k) => people[k]) };
+}
+
+/** 사람별 출석 현황 (최근 limit회 모임 기준, 0이면 전체). 날짜는 최신순.
+ *  기간 안에 한 번도 안 온 사람도 포함 → 장기 결석자 확인용 */
+function personSummary(d) {
+  const error = checkPassword(d);
+  if (error) return { ok: false, error: error };
+
+  const all = collectAttendance();
+  const limit = Math.max(0, Math.floor(Number(d.limit) || 0));
+  const dates = all.dates.slice().reverse().slice(0, limit || undefined);
+  const rows = all.people
+    .map((p) => {
+      const attended = dates.map((dt) => !!p.dates[dt]);
+      return { id: p.id, name: p.name, attended: attended, total: attended.filter(Boolean).length };
+    })
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "ko"));
+  return { ok: true, dates: dates, totalDates: all.dates.length, people: rows };
+}
+
+/** "개인별 출석" 탭을 기록 전체로 다시 채움 (출석이 기록될 때마다 자동 실행) */
+function rebuildPersonSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName("개인별 출석");
+  if (!sheet) {
+    sheet = ss.insertSheet("개인별 출석", 2);
+    sheet.setFrozenRows(1);
+    sheet.setFrozenColumns(3);
+  }
+  const all = collectAttendance();
+  const header = ["이름", "고유ID", "합계"].concat(all.dates);
+  const rows = all.people
+    .map((p) => {
+      const marks = all.dates.map((dt) => (p.dates[dt] ? "✓" : ""));
+      return [p.name, p.id, marks.filter(Boolean).length].concat(marks);
+    })
+    .sort((a, b) => b[2] - a[2] || String(a[0]).localeCompare(String(b[0]), "ko"));
+  sheet.clearContents();
+  const values = [header].concat(rows);
+  // 날짜 머리글이 날짜 형식으로 바뀌지 않도록 머리글 행은 텍스트로
+  sheet.getRange(1, 1, 1, header.length).setNumberFormat("@").setFontWeight("bold").setBackground("#eef2ff");
+  sheet.getRange(1, 1, values.length, header.length).setValues(values);
+  sheet.getRange(1, 3, values.length, header.length - 2).setHorizontalAlignment("center");
 }
 
 /** 수식으로 해석될 수 있는 값(=, +, -, @ 로 시작)을 일반 텍스트로 저장 */
