@@ -315,21 +315,31 @@ function showPass(p, persisted) {
   startPassTimers();
 }
 
+/** 한글 등 비ASCII 문자를 \uXXXX 로 이스케이프 (qrcodejs의 UTF-8 길이 계산 버그 회피, JSON.parse 결과는 동일) */
+function toAsciiJson(obj) {
+  return JSON.stringify(obj).replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
+}
+
 function renderQR() {
   if (!pass) return;
-  const payload = JSON.stringify({ id: pass.uniqueId, name: pass.maskedName, ts: Date.now() });
-  const el = $("qrcode");
-  el.innerHTML = "";
-  qrInstance = new QRCode(el, {
-    text: payload,
-    width: 512,
-    height: 512,
-    colorDark: "#0f172a",
-    colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.M,
-  });
   qrRemain = QR_REFRESH_SEC;
   updateQrProgress();
+  const payload = toAsciiJson({ id: pass.uniqueId, name: pass.maskedName, ts: Date.now() });
+  const el = $("qrcode");
+  el.innerHTML = "";
+  try {
+    qrInstance = new QRCode(el, {
+      text: payload,
+      width: 512,
+      height: 512,
+      colorDark: "#0f172a",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+  } catch (err) {
+    console.error(err);
+    el.innerHTML = '<p class="h-full flex items-center justify-center text-center text-sm text-rose-600">QR 코드를 만들지 못했습니다.<br>인터넷 연결을 확인하고 새로고침해주세요.</p>';
+  }
 }
 
 function updateQrProgress() {
