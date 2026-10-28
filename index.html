@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#4f46e5" />
+  <title>QR 출결 시스템</title>
+
+  <!-- CDN: Tailwind CSS / qrcodejs / html5-qrcode -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
+    #qrcode img, #qrcode canvas { width: 100% !important; height: auto !important; image-rendering: pixelated; }
+    #reader { border: none !important; }
+    #reader video { border-radius: 1rem; object-fit: cover; }
+    #reader.mirror video { transform: scaleX(-1); }
+    #reader__dashboard_section_csr button { display: none; }
+    @keyframes slideDown { from { transform: translateY(-120%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .banner-in { animation: slideDown .25s ease-out; }
+    @keyframes pulseRing { 0% { box-shadow: 0 0 0 0 rgba(79,70,229,.35); } 100% { box-shadow: 0 0 0 14px rgba(79,70,229,0); } }
+    .pulse { animation: pulseRing 1.6s infinite; }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<!--
+  구글 시트 연동: 같은 폴더의 apps-script.gs 를 시트의 Apps Script 에 붙여넣고
+  웹 앱으로 배포한 뒤, 아래 GOOGLE_SCRIPT_URL / SHEET_VIEW_URL 을 채우세요.
+-->
+
+<script>
+  // ===================== 설정 상수 =====================
+  const ADMIN_PIN = "0000";
+  // Apps Script 웹 앱 URL(…/exec). 비워두면 태블릿에만 저장(CSV로 내려받기)
+  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzTlCC6Db0nvGEUzlFMcWYKgm6G4e2GSVJE6ariRTzHS4lwhRFUAEVvNc_d2ehsJrks1A/exec";
+  // 관리자가 볼 구글 시트 공유 링크. 넣으면 스캐너 화면에 [구글 시트 열기] 버튼 표시
+  const SHEET_VIEW_URL = "https://docs.google.com/spreadsheets/d/1ncyJAjKYzAAZ0zgGAEQByM9HE1lGYSbyz9qd3mkkJXQ/edit?usp=sharing";
+  const SYNC_RETRY_SEC = 15;        // 전송 실패 시 재시도 간격
+  const DEFAULT_CAMERA = "user";    // "user" = 전면(거치대에 세운 태블릿), "environment" = 후면
+  const SCAN_COOLDOWN_MS = 5000;    // 동일 ID 재스캔 무시 시간
+  const QR_REFRESH_SEC = 15;        // QR 타임스탬프 갱신 주기
+  const QR_MAX_AGE_MIN = 30;        // 스캔 시 허용하는 QR 유효 시간(분). 캡처 화면 재사용 방지
+  const STORAGE_KEY = "qrPass.v1";
+  const LOG_KEY = "qrPass.scanLog.v1";
+  const CAMERA_KEY = "qrPass.camera.v1";
+  const QUEUE_KEY = "qrPass.sendQueue.v1";
+</script>
+
+<div id="appShell" class="max-w-md mx-auto min-h-screen flex flex-col">
+
+  <!-- 헤더 -->
+  <header class="px-5 pt-6 pb-3">
+    <p class="text-xs font-semibold tracking-widest text-indigo-500">PRIVACY-SAFE ATTENDANCE</p>
+    <h1 id="pageTitle" class="text-2xl font-bold text-slate-900">내 출입증</h1>
+  </header>
+
+  <!-- 알림 배너 -->
+  <div id="banner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 w-[92%] max-w-md md:max-w-2xl z-50"></div>
+
+  <main class="flex-1 px-4 pb-28">
+
+    <!-- ===================== 참석자 탭 ===================== -->
+    <section id="tab-user">
+
+      <!-- 로그인 카드 -->
+      <div id="loginCard" class="hidden bg-white rounded-3xl shadow-sm p-6 space-y-5">
+        <div>
+          <h2 class="text-lg font-bold">출입증 발급</h2>
+          <p class="text-sm text-slate-500 mt-1">입력한 정보는 고유 ID 생성에만 사용되며, 실명·생년월일은 저장되지 않습니다.</p>
+        </div>
+
+        <form id="loginForm" class="space-y-4" autocomplete="off">
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">이름 (실명)</span>
+            <input id="inName" type="text" required maxlength="20" placeholder="홍길동"
+              class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </label>
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">생년월일 (6자리)</span>
+            <input id="inBirth" type="tel" inputmode="numeric" required maxlength="6" pattern="\d{6}" placeholder="900101"
+              class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </label>
+          <label class="block">
+            <span class="text-sm font-medium text-slate-600">비밀번호 (숫자 4자리)</span>
+            <input id="inPw" type="password" inputmode="numeric" required maxlength="4" pattern="\d{4}" placeholder="••••"
+              class="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base tracking-widest focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </label>
+          <label class="flex items-center gap-3 select-none">
+            <input id="inRemember" type="checkbox" checked class="w-5 h-5 rounded accent-indigo-600" />
+            <span class="text-sm text-slate-700">내 기기에 출입증 저장</span>
+          </label>
+          <p id="loginError" class="hidden text-sm text-rose-600"></p>
+          <button type="submit"
+            class="w-full rounded-xl bg-indigo-600 py-3.5 text-white font-semibold active:scale-[.98] transition">
+            출입증 발급
+          </button>
+        </form>
+      </div>
+
+      <!-- QR 카드 -->
+      <div id="passCard" class="hidden">
+        <div class="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-3xl shadow-lg p-6 text-white">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs uppercase tracking-widest text-indigo-200">Entry Pass</p>
+              <p class="mt-1 text-2xl font-bold"><span id="passName"></span> 님</p>
+              <p id="passId" class="mt-0.5 font-mono text-indigo-100"></p>
+            </div>
+            <span class="rounded-full bg-white/15 px-3 py-1 text-xs font-medium">● 유효</span>
+          </div>
+
+          <div class="mt-5 rounded-2xl bg-white p-4">
+            <div id="qrcode" class="mx-auto w-full max-w-[260px] aspect-square"></div>
+          </div>
+
+          <div class="mt-5 text-center">
+            <p id="clock" class="font-mono text-3xl font-bold tabular-nums">--:--:--</p>
+            <p id="clockDate" class="text-sm text-indigo-200"></p>
+          </div>
+
+          <div class="mt-4 h-1.5 w-full rounded-full bg-white/20 overflow-hidden">
+            <div id="qrProgress" class="h-full bg-white/80 transition-all duration-1000 ease-linear" style="width:100%"></div>
+          </div>
+          <p class="mt-2 text-center text-xs text-indigo-200">QR은 <span id="qrCountdown">15</span>초 후 자동 갱신됩니다</p>
+        </div>
+
+        <p id="memoryNotice" class="hidden mt-3 text-center text-xs text-amber-600">
+          이 출입증은 기기에 저장되지 않았습니다. 페이지를 닫으면 다시 입력해야 합니다.
+        </p>
+
+        <button id="logoutBtn"
+          class="mt-4 w-full rounded-xl border border-slate-300 bg-white py-3 text-sm font-medium text-slate-600 active:bg-slate-50">
+          정보 초기화 / 로그아웃
+        </button>
+      </div>
+    </section>
+
+    <!-- ===================== 관리자 탭 ===================== -->
+    <section id="tab-admin" class="hidden space-y-4">
+
+      <!-- PIN 카드 -->
+      <div id="pinCard" class="bg-white rounded-3xl shadow-sm p-6 space-y-5">
+        <div class="text-center">
+          <div class="mx-auto w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center text-2xl">🔒</div>
+          <h2 class="mt-3 text-lg font-bold">관리자 인증</h2>
+          <p class="text-sm text-slate-500">스캐너를 사용하려면 PIN을 입력하세요.</p>
+        </div>
+        <form id="pinForm" class="space-y-3">
+          <input id="inPin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN"
+            class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-xl tracking-[.5em] focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <p id="pinError" class="hidden text-center text-sm text-rose-600">PIN이 올바르지 않습니다.</p>
+          <button type="submit" class="w-full rounded-xl bg-slate-900 py-3.5 text-white font-semibold active:scale-[.98] transition">
+            카메라 열기
+          </button>
+        </form>
+      </div>
+
+      <!-- 스캐너 카드 -->
+      <div id="scannerCard" class="hidden space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 md:items-start">
+        <div class="bg-white rounded-3xl shadow-sm p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="font-bold">QR 스캐너</h2>
+            <span id="camStatus" class="flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              <span class="w-2 h-2 rounded-full bg-slate-300"></span> 대기
+            </span>
+          </div>
+          <div id="reader" class="w-full overflow-hidden rounded-2xl bg-slate-900 aspect-square"></div>
+          <p id="camError" class="hidden mt-3 text-sm text-rose-600"></p>
+          <div class="mt-3 flex gap-2">
+            <button id="camToggleBtn" class="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white">카메라 중지</button>
+            <button id="camFlipBtn" class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600">전면/후면</button>
+          </div>
+          <div class="mt-2 flex gap-2">
+            <button id="fullscreenBtn" class="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-medium text-slate-600">전체화면</button>
+            <button id="adminLockBtn" class="flex-1 rounded-xl border border-slate-300 py-2.5 text-sm font-medium text-slate-600">잠금</button>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-3xl shadow-sm p-4">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-bold">오늘 출석 <span id="todayCount" class="text-indigo-600">0</span><span class="text-sm font-normal text-slate-400"> / 전체 기록 <span id="logCount">0</span></span></h2>
+            <div class="flex items-center gap-3">
+              <button id="exportBtn" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">CSV 내려받기</button>
+              <button id="clearLogBtn" class="text-xs text-slate-400 underline">목록 비우기</button>
+            </div>
+          </div>
+          <div id="syncBar" class="hidden mb-2 flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2">
+            <span id="syncStatus" class="text-xs text-slate-500"></span>
+            <a id="sheetLink" target="_blank" rel="noopener" class="hidden shrink-0 rounded-lg bg-white border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700">구글 시트 열기</a>
+          </div>
+          <ul id="logList" class="divide-y divide-slate-100 md:max-h-[70vh] md:overflow-y-auto"></ul>
+          <p id="logEmpty" class="py-6 text-center text-sm text-slate-400">아직 스캔된 출석자가 없습니다.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 하단 탭 바 -->
+  <nav class="fixed bottom-0 inset-x-0 bg-white/90 backdrop-blur border-t border-slate-200 safe-bottom">
+    <div class="max-w-md mx-auto grid grid-cols-2">
+      <button data-tab="user" class="tab-btn flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14 10h4M14 13h3"/></svg>
+        내 출입증
+      </button>
+      <button data-tab="admin" class="tab-btn flex flex-col items-center gap-0.5 py-2.5 text-xs font-medium">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3M4 12h16"/></svg>
+        QR 스캐너
+      </button>
+    </div>
+  </nav>
+</div>
+
+<script>
+// =====================================================================
+// 공통 유틸
+// =====================================================================
+const $ = (id) => document.getElementById(id);
+const pad = (n) => String(n).padStart(2, "0");
+
+function safeGet(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
+}
+function safeSet(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+function safeRemove(key) {
+  try { localStorage.removeItem(key); } catch {}
+}
+
+function formatTime(d) {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function formatDateTime(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${formatTime(d)}`;
+}
+
+/** 이름 마스킹: 2글자 → 홍*, 3글자 이상 → 첫/끝 글자만 남기고 중간 * */
+function maskName(name) {
+  const chars = Array.from(name.trim()); // 유니코드 안전
+  if (chars.length <= 1) return chars.join("");
+  if (chars.length === 2) return chars[0] + "*";
+  return chars[0] + "*".repeat(chars.length - 2) + chars[chars.length - 1];
+}
+
+/** SHA-256(이름+생년월일+비밀번호) → 앞 6자리 대문자 → U-XXXXXX */
+async function makeUniqueId(name, birth, pw) {
+  if (!window.crypto || !crypto.subtle) {
+    throw new Error("보안 연결(HTTPS)에서만 출입증을 발급할 수 있습니다.");
+  }
+  const bytes = new TextEncoder().encode(name.trim() + birth + pw);
+  const hash = await crypto.subtle.digest("SHA-256", bytes);
+  const hex = Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return "U-" + hex.slice(0, 6).toUpperCase();
+}
+
+// =====================================================================
+// 탭 전환
+// =====================================================================
+let currentTab = "user";
+
+function switchTab(tab) {
+  currentTab = tab;
+  $("tab-user").classList.toggle("hidden", tab !== "user");
+  $("tab-admin").classList.toggle("hidden", tab !== "admin");
+  $("pageTitle").textContent = tab === "user" ? "내 출입증" : "QR 스캐너";
+  $("appShell").classList.toggle("max-w-md", tab !== "admin");
+  $("appShell").classList.toggle("max-w-5xl", tab === "admin");
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    const active = btn.dataset.tab === tab;
+    btn.classList.toggle("text-indigo-600", active);
+    btn.classList.toggle("text-slate-400", !active);
+  });
+
+  if (tab === "admin") {
+    if (adminUnlocked) startScanner();
+  } else {
+    stopScanner();
+  }
+}
+
+document.querySelectorAll(".tab-btn").forEach((btn) =>
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab))
+);
+
+// =====================================================================
+// 참석자: 로그인 / 출입증
+// =====================================================================
+let pass = null;          // { uniqueId, maskedName }
+let qrInstance = null;
+let qrTimer = null;
+let clockTimer = null;
+let qrRemain = QR_REFRESH_SEC;
+
+function showLogin() {
+  pass = null;
+  stopPassTimers();
+  $("passCard").classList.add("hidden");
+  $("loginCard").classList.remove("hidden");
+  $("loginForm").reset();
+  $("inRemember").checked = true;
+}
+
+function showPass(p, persisted) {
+  pass = p;
+  $("loginCard").classList.add("hidden");
+  $("passCard").classList.remove("hidden");
+  $("passName").textContent = p.maskedName;
+  $("passId").textContent = "#" + p.uniqueId;
+  $("memoryNotice").classList.toggle("hidden", persisted);
+  renderQR();
+  startPassTimers();
+}
+
+function renderQR() {
+  if (!pass) return;
+  const payload = JSON.stringify({ id: pass.uniqueId, name: pass.maskedName, ts: Date.now() });
+  const el = $("qrcode");
+  el.innerHTML = "";
+  qrInstance = new QRCode(el, {
+    text: payload,
+    width: 512,
+    height: 512,
+    colorDark: "#0f172a",
+    colorLight: "#ffffff",
+    correctLevel: QRCode.CorrectLevel.M,
+  });
+  qrRemain = QR_REFRESH_SEC;
+  updateQrProgress();
+}
+
+function updateQrProgress() {
+  $("qrCountdown").textContent = qrRemain;
+  $("qrProgress").style.width = (qrRemain / QR_REFRESH_SEC) * 100 + "%";
+}
+
+function tickClock() {
+  const now = new Date();
+  $("clock").textContent = formatTime(now);
+  $("clockDate").textContent = now.toLocaleDateString("ko-KR", {
+    year: "numeric", month: "long", day: "numeric", weekday: "short",
+  });
+}
+
+function startPassTimers() {
+  stopPassTimers();
+  tickClock();
+  clockTimer = setInterval(tickClock, 1000);
+  qrTimer = setInterval(() => {
+    qrRemain -= 1;
+    if (qrRemain <= 0) renderQR();
+    else updateQrProgress();
+  }, 1000);
+}
+
+function stopPassTimers() {
+  clearInterval(clockTimer);
+  clearInterval(qrTimer);
+}
+
+$("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("loginError");
+  err.classList.add("hidden");
+
+  const name = $("inName").value.trim();
+  const birth = $("inBirth").value.trim();
+  const pw = $("inPw").value.trim();
+
+  let msg = "";
+  if (Array.from(name).length < 2) msg = "이름을 2글자 이상 입력해주세요.";
+  else if (!/^\d{6}$/.test(birth)) msg = "생년월일은 숫자 6자리로 입력해주세요. (예: 900101)";
+  else if (!/^\d{4}$/.test(pw)) msg = "비밀번호는 숫자 4자리로 입력해주세요.";
+  if (msg) {
+    err.textContent = msg;
+    err.classList.remove("hidden");
+    return;
+  }
+
+  try {
+    const uniqueId = await makeUniqueId(name, birth, pw);
+    const p = { uniqueId, maskedName: maskName(name) };
+    // 원본 이름·생년월일·비밀번호는 저장하지 않음
+    const remember = $("inRemember").checked;
+    if (remember) safeSet(STORAGE_KEY, p);
+    else safeRemove(STORAGE_KEY);
+    $("loginForm").reset();
+    showPass(p, remember);
+  } catch (ex) {
+    err.textContent = ex.message || "출입증 발급에 실패했습니다.";
+    err.classList.remove("hidden");
+  }
+});
+
+// 숫자 입력칸은 숫자만 허용
+["inBirth", "inPw", "inPin"].forEach((id) =>
+  $(id).addEventListener("input", (e) => { e.target.value = e.target.value.replace(/\D/g, ""); })
+);
+
+$("logoutBtn").addEventListener("click", () => {
+  if (!confirm("저장된 출입증 정보를 삭제하고 로그아웃할까요?")) return;
+  safeRemove(STORAGE_KEY);
+  showLogin();
+});
+
+// =====================================================================
+// 관리자: PIN / 스캐너
+// =====================================================================
+let adminUnlocked = false;
+let scanner = null;
+let scannerRunning = false;
+let scannerBusy = false;
+const lastScanAt = new Map();   // id → timestamp (쿨타임)
+let scanLog = safeGet(LOG_KEY) || [];
+let audioCtx = null;
+let facing = safeGet(CAMERA_KEY) || DEFAULT_CAMERA;
+let wakeLock = null;
+
+/** 스캔 중에는 태블릿 화면이 꺼지지 않도록 유지 */
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && "wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } else if (!on && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch {}
+}
+
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+  } catch {}
+}
+
+/** '띠링' 2음 비프 */
+function playBeep() {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  [[1318.5, 0], [1760, 0.12]].forEach(([freq, offset]) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t0 + offset);
+    gain.gain.exponentialRampToValueAtTime(0.35, t0 + offset + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + offset + 0.25);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t0 + offset);
+    osc.stop(t0 + offset + 0.3);
+  });
+  if (navigator.vibrate) navigator.vibrate(80);
+}
+
+$("pinForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  unlockAudio(); // 사용자 제스처 안에서 오디오 활성화
+  if ($("inPin").value === ADMIN_PIN) {
+    adminUnlocked = true;
+    $("pinError").classList.add("hidden");
+    $("inPin").value = "";
+    $("pinCard").classList.add("hidden");
+    $("scannerCard").classList.remove("hidden");
+    renderLog();
+    startScanner();
+  } else {
+    $("pinError").classList.remove("hidden");
+    $("inPin").value = "";
+  }
+});
+
+$("adminLockBtn").addEventListener("click", async () => {
+  await stopScanner();
+  adminUnlocked = false;
+  $("scannerCard").classList.add("hidden");
+  $("pinCard").classList.remove("hidden");
+});
+
+$("camToggleBtn").addEventListener("click", () => {
+  scannerRunning ? stopScanner() : startScanner();
+});
+
+$("camFlipBtn").addEventListener("click", async () => {
+  facing = facing === "user" ? "environment" : "user";
+  safeSet(CAMERA_KEY, facing);
+  await stopScanner();
+  startScanner();
+});
+
+$("fullscreenBtn").addEventListener("click", () => {
+  const el = document.documentElement;
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+});
+
+function setCamStatus(on, text) {
+  $("camStatus").innerHTML =
+    `<span class="w-2 h-2 rounded-full ${on ? "bg-emerald-500 pulse" : "bg-slate-300"}"></span> ${text}`;
+  $("camToggleBtn").textContent = on ? "카메라 중지" : "카메라 시작";
+}
+
+async function startScanner() {
+  if (scannerRunning || scannerBusy || currentTab !== "admin" || !adminUnlocked) return;
+  scannerBusy = true;
+  $("camError").classList.add("hidden");
+  setCamStatus(false, "연결 중…");
+  try {
+    if (!scanner) scanner = new Html5Qrcode("reader", { verbose: false });
+    await scanner.start(
+      { facingMode: facing },
+      { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
+      onScanSuccess,
+      () => {} // 프레임별 인식 실패는 무시
+    );
+    scannerRunning = true;
+    $("reader").classList.toggle("mirror", facing === "user");
+    setCamStatus(true, facing === "user" ? "스캔 중 · 전면" : "스캔 중 · 후면");
+    keepAwake(true);
+  } catch (err) {
+    setCamStatus(false, "중지됨");
+    $("camError").textContent = "카메라를 열 수 없습니다. 브라우저 카메라 권한과 HTTPS 접속 여부를 확인해주세요.";
+    $("camError").classList.remove("hidden");
+    console.error(err);
+  } finally {
+    scannerBusy = false;
+  }
+}
+
+async function stopScanner() {
+  if (!scanner || !scannerRunning) return;
+  try { await scanner.stop(); } catch {}
+  scannerRunning = false;
+  setCamStatus(false, "중지됨");
+  keepAwake(false);
+}
+
+function parsePayload(text) {
+  try {
+    const d = JSON.parse(text);
+    if (d && typeof d.id === "string" && /^U-[0-9A-F]{6}$/.test(d.id) && typeof d.name === "string") {
+      return { id: d.id, name: d.name.slice(0, 30), ts: Number(d.ts) || null };
+    }
+  } catch {}
+  return null;
+}
+
+function onScanSuccess(decodedText) {
+  const data = parsePayload(decodedText);
+  if (!data) {
+    showBanner("error", "유효하지 않은 출입증 QR입니다.");
+    return;
+  }
+
+  // 오래된 QR(캡처 화면 등) 거부. 기기 간 시계 오차를 고려해 미래 시각은 1분까지 허용
+  const age = Date.now() - (data.ts || 0);
+  if (!data.ts || age > QR_MAX_AGE_MIN * 60000 || age < -60000) {
+    showBanner("error", "만료된 QR입니다. 출입증 화면을 새로 열어주세요.");
+    return;
+  }
+
+  // 동일 ID 5초 쿨타임
+  const now = Date.now();
+  const last = lastScanAt.get(data.id);
+  if (last && now - last < SCAN_COOLDOWN_MS) return;
+  lastScanAt.set(data.id, now);
+
+  const time = formatDateTime(new Date(now));
+
+  // 같은 날 이미 출석한 ID는 다시 기록하지 않음
+  const already = scanLog.find((r) => r.id === data.id && r.time.startsWith(todayStr()));
+  if (already) {
+    showBanner("info", `${data.name} (#${data.id})님은 이미 출석했습니다 (${already.time.split(" ")[1]})`);
+    return;
+  }
+
+  playBeep();
+  showBanner("success", `${data.name} (#${data.id})님 출석 완료!`);
+
+  scanLog.unshift({ id: data.id, name: data.name, time });
+  safeSet(LOG_KEY, scanLog);
+  renderLog();
+
+  sendToSheet({ id: data.id, name: data.name, time });
+}
+
+// ---------- 구글 시트 전송 (실패 시 대기열에 보관 후 자동 재전송) ----------
+let sendQueue = safeGet(QUEUE_KEY) || [];
+let flushing = false;
+
+function sendToSheet(record) {
+  if (!GOOGLE_SCRIPT_URL) return; // 태블릿 단독 운영
+  sendQueue.push(record);
+  safeSet(QUEUE_KEY, sendQueue);
+  flushQueue();
+}
+
+async function flushQueue() {
+  if (!GOOGLE_SCRIPT_URL || flushing || !sendQueue.length) return renderSync();
+  flushing = true;
+  renderSync();
+  try {
+    while (sendQueue.length) {
+      // text/plain 으로 보내면 preflight 없이 Apps Script 응답을 읽을 수 있음
+      const res = await fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(sendQueue[0]),
+      });
+      const out = await res.json();
+      if (!out.ok) console.warn("시트가 기록을 거부했습니다.", sendQueue[0], out);
+      sendQueue.shift(); // 성공(또는 중복·형식 오류로 재시도 무의미) → 대기열에서 제거
+      safeSet(QUEUE_KEY, sendQueue);
+    }
+  } catch (err) {
+    console.error("시트 전송 실패, 재시도 예정", err); // 네트워크 오류 → 다음 주기에 재전송
+  } finally {
+    flushing = false;
+    renderSync();
+  }
+}
+
+function renderSync() {
+  if (!GOOGLE_SCRIPT_URL && !SHEET_VIEW_URL) return;
+  $("syncBar").classList.remove("hidden");
+  if (SHEET_VIEW_URL) {
+    $("sheetLink").href = SHEET_VIEW_URL;
+    $("sheetLink").classList.remove("hidden");
+  }
+  const s = $("syncStatus");
+  if (!GOOGLE_SCRIPT_URL) s.textContent = "";
+  else if (flushing) s.textContent = "⏳ 구글 시트로 전송 중…";
+  else if (sendQueue.length) s.textContent = `⚠️ 전송 대기 ${sendQueue.length}건 · 인터넷 연결 시 자동 재전송`;
+  else s.textContent = "✅ 구글 시트와 동기화됨";
+  s.className = `text-xs ${sendQueue.length && !flushing ? "text-amber-600 font-semibold" : "text-slate-500"}`;
+}
+
+setInterval(flushQueue, SYNC_RETRY_SEC * 1000);
+window.addEventListener("online", flushQueue);
+
+function renderLog() {
+  const list = $("logList");
+  list.innerHTML = "";
+  scanLog.forEach((r) => {
+    const li = document.createElement("li");
+    li.className = "flex items-center justify-between py-3";
+
+    const left = document.createElement("div");
+    const nm = document.createElement("p");
+    nm.className = "font-semibold";
+    nm.textContent = r.name;
+    const id = document.createElement("p");
+    id.className = "font-mono text-xs text-slate-400";
+    id.textContent = "#" + r.id;
+    left.append(nm, id);
+
+    const tm = document.createElement("span");
+    tm.className = "font-mono text-sm text-slate-500 tabular-nums";
+    tm.textContent = r.time.split(" ")[1] || r.time;
+    tm.title = r.time;
+
+    li.append(left, tm);
+    list.appendChild(li);
+  });
+  $("logCount").textContent = scanLog.length;
+  $("todayCount").textContent = scanLog.filter((r) => r.time.startsWith(todayStr())).length;
+  $("logEmpty").classList.toggle("hidden", scanLog.length > 0);
+}
+
+function todayStr() {
+  return formatDateTime(new Date()).split(" ")[0];
+}
+
+/** 엑셀에서 한글이 깨지지 않도록 BOM 포함 CSV로 저장 */
+function exportCsv() {
+  if (!scanLog.length) {
+    showBanner("info", "내려받을 출석 기록이 없습니다.");
+    return;
+  }
+  const esc = (v) => `"${String(v).replace(/"/g, '""')}"`;
+  const rows = [["날짜", "시간", "고유ID", "이름"]].concat(
+    scanLog.slice().reverse().map((r) => { const [d, t] = r.time.split(" "); return [d, t, r.id, r.name]; })
+  );
+  const csv = "\uFEFF" + rows.map((row) => row.map(esc).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `attendance_${todayStr()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$("exportBtn").addEventListener("click", exportCsv);
+
+$("clearLogBtn").addEventListener("click", () => {
+  const msg = GOOGLE_SCRIPT_URL
+    ? "이 태블릿의 출석 목록을 비울까요? (구글 시트 기록은 유지됩니다)"
+    : "이 태블릿의 출석 기록을 모두 지울까요? 먼저 CSV로 내려받았는지 확인하세요.";
+  if (!confirm(msg)) return;
+  scanLog = [];
+  safeRemove(LOG_KEY);
+  renderLog();
+});
+
+// =====================================================================
+// 알림 배너
+// =====================================================================
+let bannerTimer = null;
+function showBanner(type, message) {
+  const b = $("banner");
+  const style = {
+    success: ["bg-emerald-600", "✅"],
+    info: ["bg-amber-500", "ℹ️"],
+    error: ["bg-rose-600", "⚠️"],
+  }[type] || ["bg-rose-600", "⚠️"];
+  b.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = `banner-in flex items-center gap-3 rounded-2xl px-4 py-3.5 md:px-6 md:py-5 shadow-xl text-white ${style[0]}`;
+  const icon = document.createElement("span");
+  icon.className = "text-xl md:text-3xl";
+  icon.textContent = style[1];
+  const txt = document.createElement("p");
+  txt.className = "font-semibold md:text-2xl";
+  txt.textContent = message;
+  box.append(icon, txt);
+  b.appendChild(box);
+  b.classList.remove("hidden");
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => b.classList.add("hidden"), 2500);
+}
+
+// 백그라운드 전환 시 카메라 해제, 복귀 시 재시작
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopScanner(); // 화면 잠금 유지(wakeLock)도 함께 해제됨
+  else if (currentTab === "admin" && adminUnlocked) startScanner();
+});
+
+// =====================================================================
+// 초기화: 저장된 출입증이 있으면 바로 QR 카드 표시
+// =====================================================================
+(function init() {
+  const saved = safeGet(STORAGE_KEY);
+  if (saved && /^U-[0-9A-F]{6}$/.test(saved.uniqueId) && typeof saved.maskedName === "string") {
+    showPass(saved, true);
+  } else {
+    showLogin();
+  }
+  switchTab("user");
+  flushQueue(); // 이전에 못 보낸 기록이 있으면 재전송
+})();
+</script>
+</body>
+</html>
