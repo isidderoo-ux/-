@@ -18,12 +18,18 @@
  * 7. 아래 VIEW_PASSWORD 를 원하는 비밀번호로 바꿉니다. 사이트의 [출석 명단] 탭에서 이 비밀번호를 넣으면
  *    시트를 공유하지 않아도 명단을 볼 수 있습니다. (비밀번호는 Apps Script 안에만 있고 사이트 소스에는 없습니다)
  *
+ * 8. (권장) 편집기에서 함수 "installDailyPurge" 를 골라 [실행] → 매일 새벽 3시에 보관 기간이 지난 기록을 지웁니다.
+ *    실행하지 않아도 출석이 기록될 때 하루 한 번 자동으로 정리됩니다.
+ *
  * ※ 코드를 고친 뒤에는 [배포] > [배포 관리] > 수정(연필) > 버전 "새 버전" 으로 다시 배포해야 반영됩니다.
  */
 
 // ⚠️ 명단 보기 비밀번호: Apps Script 편집기에서만 바꾸세요. (GitHub의 apps-script.gs 에는 실제 비밀번호를 올리지 마세요)
 //    6자리 이상 추천. 비밀번호를 10번 연속 틀리면 10분간 명단 보기가 잠깁니다.
 const VIEW_PASSWORD = "여기에_비밀번호";
+
+// 출석 기록 보관 기간(일). 이 기간이 지난 기록은 시트에서 자동으로 지워집니다.
+const RETENTION_DAYS = 30;
 
 const SHEET_NAME = "출석";
 const HEADERS = ["날짜", "시간", "고유ID", "이름", "중복확인키"];
@@ -45,6 +51,7 @@ function doPost(e) {
     const sheet = getSheet();
     const date = time.slice(0, 10);
     const key = date + "|" + id;
+    if (date <= cutoffDate()) return json({ ok: true, expired: true }); // 보관 기간이 지난 기록(늦게 재전송된 것)은 버림
 
     // 같은 날 같은 ID는 한 번만 기록 (태블릿 재전송 시에도 중복 방지)
     const lastRow = sheet.getLastRow();
@@ -56,6 +63,7 @@ function doPost(e) {
     }
 
     sheet.appendRow([date, time.slice(11), id, safeText(d.name), key]);
+    purgeIfDue();
     rebuildPersonSheet();
     return json({ ok: true });
   } catch (err) {
@@ -214,6 +222,63 @@ function rebuildPersonSheet() {
   sheet.getRange(1, 1, 1, header.length).setNumberFormat("@").setFontWeight("bold").setBackground("#eef2ff");
   sheet.getRange(1, 1, values.length, header.length).setValues(values);
   sheet.getRange(1, 3, values.length, header.length - 2).setHorizontalAlignment("center");
+}
+
+// ---------- 보관 기간 지난 기록 삭제 ----------
+
+/** 이 날짜 이하(yyyy-MM-dd)의 기록은 삭제 대상. 오늘이 10-29 이고 30일 보관이면 09-29 */
+function cutoffDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - RETENTION_DAYS);
+  return Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
+}
+
+/** "출석" 탭에서 보관 기간이 지난 행을 지우고 지운 행 수를 돌려줌 */
+function purgeOldRecords() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  const cutoff = cutoffDate();
+  const range = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADERS.length);
+  const rows = range.getValues();
+  const shown = range.getDisplayValues(); // 날짜 비교는 화면에 보이는 "yyyy-MM-dd" 글자로
+  const keep = rows
+    .filter((r, i) => shown[i][0] > cutoff)
+    .map((r) => [r[0], r[1], r[2], safeText(r[3]), r[4]]); // 다시 쓸 때 이름이 수식으로 바뀌지 않게
+  const removed = rows.length - keep.length;
+  if (!removed) return 0;
+  range.clearContent();
+  if (keep.length) sheet.getRange(2, 1, keep.length, HEADERS.length).setValues(keep);
+  return removed;
+}
+
+/** 출석이 기록될 때 하루 한 번만 정리 (트리거를 설치하지 않아도 동작하도록) */
+function purgeIfDue() {
+  const props = PropertiesService.getScriptProperties();
+  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  if (props.getProperty("lastPurge") === today) return;
+  purgeOldRecords();
+  props.setProperty("lastPurge", today);
+}
+
+/** 매일 실행되는 정리 작업 (installDailyPurge 가 등록) */
+function dailyPurge() {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    purgeOldRecords();
+    rebuildPersonSheet();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** 편집기에서 한 번 실행: 매일 새벽 3시에 dailyPurge 를 돌리는 트리거 등록 */
+function installDailyPurge() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === "dailyPurge")
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger("dailyPurge").timeBased().everyDays(1).atHour(3).create();
+  dailyPurge(); // 지금 한 번 바로 정리
 }
 
 /** 수식으로 해석될 수 있는 값(=, +, -, @ 로 시작)을 일반 텍스트로 저장 */
