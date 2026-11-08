@@ -1,0 +1,18 @@
+{
+  "name": "church-lightshow",
+  "version": "1.0.0",
+  "description": "교회 행사용 스마트폰 조명 연출 시스템 (관객 폰 = 한 픽셀)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": { "node": ">=16" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5"
+  }
+}

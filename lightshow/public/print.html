@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>좌석 번호표 출력</title>
+<style>
+body{font-family:-apple-system,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;margin:0;background:#eee;color:#000}
+.ctl{background:#222;color:#fff;padding:12px 16px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.ctl input,.ctl select{padding:5px;font-size:15px}
+.ctl input[type=number]{width:64px}
+.ctl button{padding:8px 16px;font-size:16px;font-weight:700;background:#ffd54a;border:0;border-radius:8px;cursor:pointer}
+.sheet{background:#fff;margin:14px auto;padding:8mm;width:210mm;box-sizing:border-box}
+.grp{break-inside:avoid-page}
+.grp h4{margin:0 0 3mm;font-size:12pt}
+.labels{display:grid;gap:0}
+.lb{border:.3mm dashed #999;display:flex;flex-direction:column;align-items:center;justify-content:center;break-inside:avoid;line-height:1.05;overflow:hidden}
+.lb .r{font-size:var(--rs)}.lb .n{font-size:var(--ns);font-weight:800}.lb .u{font-size:var(--rs)}
+@page{size:A4;margin:6mm}
+@media print{body{background:#fff}.ctl{display:none}.sheet{margin:0;padding:0;width:auto}.pb{break-before:page}}
+</style>
+</head>
+<body>
+<div class="ctl">
+  <b>🖨 좌석 번호표</b>
+  <label>배치 <select id="sel"></select></label>
+  <label>가로 칸수 <input type="number" id="cols" value="4" min="1" max="8"></label>
+  <label>칸 높이(mm) <input type="number" id="hmm" value="38" min="15" max="120"></label>
+  <label><input type="checkbox" id="pb"> 줄마다 새 페이지</label>
+  <button id="go">인쇄 / PDF 저장</button>
+  <span style="font-size:13px;color:#bbb">인쇄 창에서 "PDF로 저장"을 선택하면 PDF가 됩니다. 점선을 따라 잘라 스티커로 사용하세요.</span>
+  <span id="msg" style="color:#f99"></span>
+</div>
+<div class="sheet" id="sheet"></div>
+<script src="js/common.js"></script>
+<script>
+(function(){
+  var token=localStorage.getItem('ls_token')||'', layouts=[], active='';
+  var $=function(s){return document.querySelector(s)};
+  fetch('/api/layouts',{headers:{'x-token':token}}).then(function(r){
+    if(r.status===401){ $('#msg').innerHTML='먼저 <a style="color:#9cf" href="/admin.html">운영자 페이지</a>에서 로그인하세요.'; throw 0; }
+    return r.json();
+  }).then(function(j){
+    layouts=j.layouts; active=j.active;
+    var q=new URLSearchParams(location.search).get('id')||active;
+    $('#sel').innerHTML=layouts.map(function(l){return '<option value="'+l.id+'"'+(l.id===q?' selected':'')+'>'+l.name.replace(/</g,'&lt;')+(l.id===active?' (활성)':'')+'</option>'}).join('');
+    render();
+  }).catch(function(){});
+  function render(){
+    var L=layouts.filter(function(l){return l.id===$('#sel').value})[0]; if(!L) return;
+    var G=LS.grid(L), cols=+$('#cols').value||4, h=+$('#hmm').value||38, html='';
+    var sheet=$('#sheet'); sheet.style.setProperty('--ns',(h*0.55)+'mm'); sheet.style.setProperty('--rs',(h*0.2)+'mm');
+    for(var r=0;r<G.H;r++){
+      var items='';
+      for(var c=0;c<G.W;c++){ var s=G.g[r][c]; if(s) items+='<div class="lb" style="height:'+h+'mm"><span class="r">'+(r+1)+'줄</span><span class="n">'+s.num+'</span><span class="u">번</span></div>'; }
+      html+='<div class="grp'+($('#pb').checked&&r>0?' pb':'')+'"><h4>'+L.name.replace(/</g,'&lt;')+' · '+(r+1)+'줄</h4><div class="labels" style="grid-template-columns:repeat('+cols+',1fr)">'+items+'</div></div>';
+    }
+    sheet.innerHTML=html;
+  }
+  ['sel','cols','hmm','pb'].forEach(function(i){$('#'+i).onchange=render;$('#'+i).oninput=render});
+  $('#go').onclick=function(){window.print()};
+})();
+</script>
+</body>
+</html>

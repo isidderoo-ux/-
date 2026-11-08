@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>운영자 · 조명 연출</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="login" style="max-width:340px;margin:18vh auto;padding:20px">
+  <h2>🔒 운영자 로그인</h2>
+  <form id="loginform">
+    <input type="password" id="pw" placeholder="비밀번호" style="width:100%;margin-bottom:10px" autocomplete="current-password">
+    <button class="btn pri" style="width:100%">로그인</button>
+  </form>
+  <p id="loginerr" style="color:#f77"></p>
+</div>
+
+<div class="adm hidden" id="app">
+  <div class="top">
+    <b style="font-size:20px">✨ 조명 연출 콘솔</b>
+    <span class="stat">접속자 <b id="st-n">0</b>명</span>
+    <span class="stat">자리 등록 <b id="st-seated">0</b> / <span id="st-total">0</span> · 건너뛰기 <b id="st-skip">0</b></span>
+    <span class="stat">활성 배치: <b id="st-layout" style="font-size:16px"></b></span>
+    <span class="stat" id="st-conn"></span>
+    <a class="btn" href="/print.html" target="_blank" style="text-decoration:none;color:#fff">🖨 번호표 출력</a>
+    <button class="btn" id="logout">로그아웃</button>
+  </div>
+  <div class="tabs"><button id="tab-show" class="on">연출</button><button id="tab-layout">좌석 배치 편집</button></div>
+
+  <!-- 연출 -->
+  <div id="p-show" class="cols" style="margin-top:0">
+    <div class="panel">
+      <h3>접속 현황 (초록=접속, 주황=한 자리에 2명 이상)</h3>
+      <div id="occ" style="overflow:auto;text-align:center"></div>
+      <div class="legend stat"><span style="background:#2b2b38"></span>빈자리<span style="background:#2ecc71"></span>접속<span style="background:#e67e22"></span>중복</div>
+    </div>
+
+    <div class="panel">
+      <h3>패턴 그리기 <small id="pat-size" class="stat"></small></h3>
+      <div class="row" id="swatches"></div>
+      <div class="row">
+        <input type="color" id="custom" value="#ffffff">
+        <button class="btn" id="tool-paint">✏ 그리기</button>
+        <button class="btn" id="tool-erase">⌫ 지우개</button>
+        <button class="btn" id="fill">전체 칠하기</button>
+        <button class="btn" id="clear">모두 지우기</button>
+      </div>
+      <canvas id="paint"></canvas>
+      <div class="row">
+        <button class="btn pri" id="send-pat">▶ 이 패턴 송출</button>
+        <span class="stat">기본:</span>
+        <button class="btn" data-b="cross">✝ 십자가</button>
+        <button class="btn" data-b="heart">♥ 하트</button>
+        <button class="btn" data-b="full">전체 점등</button>
+      </div>
+      <div class="row">
+        <input type="text" id="pname" placeholder="패턴 이름" maxlength="30" style="width:150px">
+        <button class="btn" id="save-pat">💾 이 배치에 저장</button>
+      </div>
+      <div id="saved"></div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h3>효과</h3>
+        <div class="row">
+          <button class="btn pri" id="all-on">💡 전체 ON</button>
+          <button class="btn red" id="all-off">⏹ 전체 OFF</button>
+          <span class="stat">밝기</span>
+          <input type="range" id="br" min="10" max="100" value="70"><b id="br-v">70%</b>
+        </div>
+        <div class="row">
+          <button class="btn" id="blink">깜빡임 OFF</button>
+          <input type="range" id="bl-hz" min="0.5" max="3" step="0.5" value="1.5">
+          <span class="stat">초당 <b id="bl-v" style="font-size:16px">1.5</b>회 <small>(최대 3회, 안전 제한)</small></span>
+        </div>
+        <div class="row">
+          <button class="btn" id="wave-v">⬇ 앞→뒤 파도</button>
+          <button class="btn" id="wave-h">➡ 좌→우 파도</button>
+          <span class="stat">속도(칸당)</span>
+          <input type="range" id="wave-ms" min="100" max="600" step="50" value="250"><b id="wave-v-ms" style="font-size:14px">250ms</b>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>흐르는 글씨</h3>
+        <div class="row">
+          <input type="text" id="txt" placeholder="예: 주님 사랑해요" maxlength="40" style="width:230px">
+          <button class="btn pri" id="send-txt">▶ 송출</button>
+        </div>
+        <div class="row">
+          <span class="stat">색</span><input type="color" id="txt-c" value="#ffffff">
+          <span class="stat">배경</span><input type="color" id="txt-bg" value="#000000">
+          <span class="stat">속도(칸당)</span>
+          <input type="range" id="txt-ms" min="170" max="600" step="10" value="250"><b id="txt-v" style="font-size:14px">250ms</b>
+        </div>
+        <canvas id="txtprev" style="max-width:100%;background:#000;border-radius:4px"></canvas>
+        <div class="stat"><small>글씨 폭이 좁은 배치는 읽기 어려울 수 있어요. 속도는 안전 규칙상 칸당 170ms 이상만 가능합니다.</small></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 배치 편집 -->
+  <div id="p-layout" class="cols hidden" style="margin-top:0">
+    <div class="panel">
+      <h3>저장된 배치</h3>
+      <div class="row">
+        <button class="btn pri" id="lay-new">＋ 새 배치</button>
+        <button class="btn" id="lay-export">⬇ 모두 내보내기</button>
+        <label class="btn" style="cursor:pointer">⬆ 가져오기<input type="file" id="lay-import" accept=".json,application/json" hidden></label>
+      </div>
+      <div id="laylist"></div>
+    </div>
+    <div class="panel" id="editor-panel">
+      <h3 id="ed-title">편집기</h3>
+      <div id="ed-body"></div>
+    </div>
+  </div>
+</div>
+
+<dialog id="dlg-fit">
+  <h3 style="margin-top:0">패턴 크기가 현재 배치와 다릅니다</h3>
+  <p class="stat" id="fit-info"></p>
+  <canvas id="fit-cv"></canvas>
+  <div class="row" style="justify-content:flex-end">
+    <button class="btn" id="fit-cancel">취소</button>
+    <button class="btn pri" id="fit-ok">중앙 기준으로 불러오기</button>
+  </div>
+</dialog>
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/common.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>
