@@ -482,6 +482,19 @@
     }).catch(function (e) { toast('저장 실패: ' + e.message); });
   }
 
+  /* ---------- 관객 접속 QR ---------- */
+  function drawQr() {
+    var u = $('#qr-url').value.trim();
+    $('#qr-note').textContent = /localhost|127\.0\.0\.1/.test(u) ? '⚠ localhost 주소는 폰에서 열리지 않습니다. "내부 IP로"를 누르거나 NAS 주소를 입력하세요.' : (u.indexOf('https:') === 0 ? '' : 'http 주소는 폰에서 플래시/화면 유지가 동작하지 않을 수 있습니다(HTTPS 권장).');
+    fetch('/api/qr?url=' + encodeURIComponent(u), { headers: { 'x-token': token } }).then(function (r) { return r.text(); }).then(function (svg) { $('#qr-img').innerHTML = svg; $('#qr-img svg').style.cssText = 'width:100%;height:100%'; });
+  }
+  $('#qr-btn').onclick = function () { $('#qr-url').value = location.origin + '/'; $('#dlg-qr').showModal(); drawQr(); };
+  $('#qr-url').oninput = drawQr;
+  $('#qr-close').onclick = function () { $('#dlg-qr').close(); };
+  $('#qr-ip').onclick = function () {
+    api('GET', '/api/info').then(function (i) { if (i.ips[0]) { $('#qr-url').value = (i.https ? 'https' : 'http') + '://' + i.ips[0] + ':' + i.port + '/'; drawQr(); } else toast('내부 IP를 찾지 못했습니다'); });
+  };
+
   /* ---------- 시작 ---------- */
   window.addEventListener('beforeunload', function (e) { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
   if (token) api('GET', '/api/layouts').then(function () { boot(); }).catch(function () { $('#login').classList.remove('hidden'); });

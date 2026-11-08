@@ -23,6 +23,7 @@
     <span class="stat">자리 등록 <b id="st-seated">0</b> / <span id="st-total">0</span> · 건너뛰기 <b id="st-skip">0</b></span>
     <span class="stat">활성 배치: <b id="st-layout" style="font-size:16px"></b></span>
     <span class="stat" id="st-conn"></span>
+    <button class="btn" id="qr-btn">📱 접속 QR</button>
     <a class="btn" href="/print.html" target="_blank" style="text-decoration:none;color:#fff">🖨 번호표 출력</a>
     <button class="btn" id="logout">로그아웃</button>
   </div>
@@ -126,6 +127,13 @@
     <button class="btn" id="fit-cancel">취소</button>
     <button class="btn pri" id="fit-ok">중앙 기준으로 불러오기</button>
   </div>
+</dialog>
+<dialog id="dlg-qr">
+  <h3 style="margin-top:0">관객 접속 QR</h3>
+  <div class="row"><input type="text" id="qr-url" style="width:300px"> <button class="btn" id="qr-ip" title="이 PC의 같은 와이파이 주소로 바꾸기">내부 IP로</button></div>
+  <div id="qr-img" style="background:#fff;border-radius:8px;width:300px;height:300px;margin:8px 0"></div>
+  <p class="stat" id="qr-note" style="max-width:300px"></p>
+  <div class="row" style="justify-content:flex-end"><button class="btn" id="qr-close">닫기</button></div>
 </dialog>
 <div id="toast"></div>
 

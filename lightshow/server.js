@@ -8,6 +8,8 @@ const crypto = require('crypto');
 const express = require('express');
 const { Server } = require('socket.io');
 const C = require('./public/js/common.js');
+const QRCode = require('qrcode');
+const os = require('os');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'church1234';
@@ -87,6 +89,17 @@ app.post('/api/login', (req, res) => {
   const token = crypto.randomBytes(24).toString('hex');
   tokens.set(token, Date.now() + TOKEN_TTL);
   res.json({ token });
+});
+
+app.get('/api/info', auth, (req, res) => {
+  const ips = [];
+  Object.values(os.networkInterfaces()).forEach((l) => (l || []).forEach((a) => { if (a.family === 'IPv4' && !a.internal) ips.push(a.address); }));
+  res.json({ ips, port: PORT, https: !!process.env.SSL_CERT });
+});
+app.get('/api/qr', auth, (req, res) => {
+  const url = String(req.query.url || '').slice(0, 300);
+  if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: 'url' });
+  QRCode.toString(url, { type: 'svg', margin: 2, width: 360 }, (e, svg) => (e ? res.status(500).end() : res.type('image/svg+xml').send(svg)));
 });
 
 app.get('/api/layouts', auth, (req, res) => res.json({ active: db.active, layouts: db.layouts }));

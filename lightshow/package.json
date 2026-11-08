@@ -7,9 +7,12 @@
     "start": "node server.js",
     "test": "node test/smoke.js"
   },
-  "engines": { "node": ">=16" },
+  "engines": {
+    "node": ">=16"
+  },
   "dependencies": {
     "express": "^4.19.2",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
