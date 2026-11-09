@@ -41,18 +41,25 @@
     sock.on('init', onLayoutMsg);
     sock.on('layout', onLayoutMsg);
     sock.on('pres', function (p) { pres = p; renderPres(); });
-    sock.on('c', function (m) { if (m.k === 'br') { $('#br').value = Math.round(m.v * 100); $('#br-v').textContent = Math.round(m.v * 100) + '%'; } });
+    sock.on('c', function (m) {
+      if (m.lid !== activeLid) return;
+      if (m.k === 'br') { $('#br').value = Math.round(m.v * 100); $('#br-v').textContent = Math.round(m.v * 100) + '%'; }
+      liveQueue.push(m); liveQueue.sort(function (a, b) { return a.at - b.at; });
+    });
     loadLayouts();
   }
 
   function onLayoutMsg(p) {
     var changed = !activeLid || activeLid !== p.lid;
+    if (p.t) srvOffset = p.t - Date.now();
+    live = { scene: (p.state && p.state.scene) || { k: 'off' }, bl: p.state && p.state.bl, br: (p.state && p.state.br) || 0.7 }; liveQueue = []; liveLabelDirty = true;
+    if (changed) staged = null;
     activeL = LS.sanitize(p.layout, p.layout.id); activeL.rev = p.layout.rev;
     activeLid = p.lid; G = LS.grid(activeL);
     $('#st-layout').textContent = activeL.name;
     $('#st-total').textContent = G.total;
     if (p.state && p.state.br) { $('#br').value = Math.round(p.state.br * 100); $('#br-v').textContent = Math.round(p.state.br * 100) + '%'; }
-    if (changed) { pres = null; resetPaint(); loadPatterns(); if (p.state) syncBlinkUI(p.state.bl); }
+    if (changed) { pres = null; resetPaint(); loadPatterns(); loadCues(); if (p.state) syncBlinkUI(p.state.bl); }
     activeId = activeL.id;
     renderPres(); renderLayoutList();
   }
@@ -198,11 +205,11 @@
   $$('[data-b]').forEach(function (b) {
     b.onclick = function () {
       var n = b.getAttribute('data-b');
-      if (n === 'full') { cv = builtin('full', PW, PH, cur); drawPaint(); send({ k: 'full', c: cur }); return; }
+      if (n === 'full') { cv = builtin('full', PW, PH, cur); drawPaint(); scene({ t: 'full', c: cur }); return; }
       cv = builtin(n, PW, PH, cur); drawPaint(); sendPaint();
     };
   });
-  function sendPaint() { var e = LS.encodePx(cv); send({ k: 'pat', w: PW, h: PH, pal: e.pal, px: e.px }); }
+  function sendPaint() { var e = LS.encodePx(cv); scene({ t: 'pat', w: PW, h: PH, pal: e.pal, px: e.px }); }
   $('#send-pat').onclick = sendPaint;
 
   /* ---------- 사용자 패턴 저장/불러오기 ---------- */
@@ -273,8 +280,10 @@
      효과 버튼
   ============================================================ */
   var blinkOn = false;
-  $('#all-on').onclick = function () { send({ k: 'full', c: cur }); };
-  $('#all-off').onclick = function () { send({ k: 'off' }); syncBlinkUI(null); };
+  $('#all-on').onclick = function () { scene({ t: 'full', c: cur }); };
+  function stopAll() { send({ k: 'off' }); syncBlinkUI(null); }
+  $('#all-off').onclick = stopAll;
+  $('#estop').onclick = stopAll;
   $('#br').oninput = function () { $('#br-v').textContent = this.value + '%'; };
   $('#br').onchange = function () { send({ k: 'br', v: this.value / 100 }); };
   function sendBlink() { send({ k: 'bl', hz: blinkOn ? +$('#bl-hz').value : 0 }); }
@@ -282,8 +291,8 @@
   $('#bl-hz').oninput = function () { $('#bl-v').textContent = this.value; };
   $('#bl-hz').onchange = function () { if (blinkOn) sendBlink(); };
   $('#wave-ms').oninput = function () { $('#wave-v-ms').textContent = this.value + 'ms'; };
-  $('#wave-v').onclick = function () { send({ k: 'wave', d: 'v', c: cur, bg: '#000000', ms: +$('#wave-ms').value, bw: 3 }); };
-  $('#wave-h').onclick = function () { send({ k: 'wave', d: 'h', c: cur, bg: '#000000', ms: +$('#wave-ms').value, bw: 3 }); };
+  $('#wave-v').onclick = function () { scene({ t: 'wave', d: 'v', c: cur, ms: +$('#wave-ms').value }); };
+  $('#wave-h').onclick = function () { scene({ t: 'wave', d: 'h', c: cur, ms: +$('#wave-ms').value }); };
 
   /* ---------- 흐르는 글씨 (한글 지원: 브라우저 폰트를 현재 배치 높이로 픽셀화) ---------- */
   var FONT = '"Malgun Gothic","Apple SD Gothic Neo","Noto Sans CJK KR","Noto Sans KR","NanumGothic",sans-serif';
@@ -343,12 +352,152 @@
   ['#txt', '#txt-c', '#txt-bg', '#txt-dir'].forEach(function (s) { $(s).oninput = previewText; });
   $('#txt-ms').oninput = function () { $('#txt-v').textContent = this.value + 'ms'; };
   $('#send-txt').onclick = function () {
-    var p = previewText();
-    if (!p) return toast('문구를 입력하세요');
-    if (p.w > 3000 || p.h > 3000) return toast('문구가 너무 깁니다');
-    // 글씨 pal[0]=배경색, pal[1]=글자색. 서버는 pal 최대 62색까지 허용
-    send({ k: 'scroll', d: $('#txt-dir').value, w: p.w, h: p.h, pal: p.pal, px: p.px, ms: +$('#txt-ms').value });
+    var t = $('#txt').value.trim();
+    if (!t) return toast('문구를 입력하세요');
+    scene({ t: 'text', text: t.slice(0, 40), dir: $('#txt-dir').value, fg: $('#txt-c').value, bg: $('#txt-bg').value, ms: +$('#txt-ms').value });
   };
+
+  /* ============================================================
+     미리보기 / LIVE 모니터 / 큐 리스트
+  ============================================================ */
+  var srvOffset = 0, live = { scene: { k: 'off' }, bl: null, br: 0.7 }, liveQueue = [], liveLabelDirty = true;
+  var staged = null, curRecipe = null;
+  var CS = 11; // 모니터 한 칸 크기(px)
+
+  function labelOf(r) {
+    switch (r.t) {
+      case 'off': return '전체 OFF';
+      case 'full': return '전체 점등';
+      case 'pat': return '패턴 (' + r.w + '×' + r.h + ')';
+      case 'wave': return (r.d === 'v' ? '앞→뒤' : '좌→우') + ' 파도';
+      case 'text': return '글씨 "' + r.text + '" (' + (r.dir === 'v' ? '세로' : '가로') + ')';
+    }
+    return r.t;
+  }
+  function liveLabel() {
+    var k = live.scene.k, t = { off: '꺼짐', full: '전체 점등', pat: '패턴', wave: (live.scene.d === 'v' ? '앞→뒤' : '좌→우') + ' 파도', scroll: '흐르는 글씨(' + (live.scene.d === 'v' ? '세로' : '가로') + ')' }[k] || k;
+    if (live.bl) t += ' + 깜빡임 ' + live.bl.hz + '회/초';
+    return t;
+  }
+  /* 레시피 -> 서버로 보낼 명령 (배치 크기가 달라졌어도 현재 크기에 맞춰 변환) */
+  function toCmd(r) {
+    switch (r.t) {
+      case 'off': return { k: 'off' };
+      case 'full': return { k: 'full', c: r.c };
+      case 'wave': return { k: 'wave', d: r.d, c: r.c, bg: '#000000', ms: r.ms, bw: 3 };
+      case 'pat':
+        var colors = LS.decodePx(r.pal, r.px);
+        if (r.w !== PW || r.h !== PH) colors = fit({ w: r.w, h: r.h, colors: colors }, PW, PH).colors;
+        var e = LS.encodePx(colors);
+        return { k: 'pat', w: PW, h: PH, pal: e.pal, px: e.px };
+      case 'text':
+        var p = r.dir === 'v' ? renderTextV(r.text, G.W, r.fg, r.bg) : renderText(r.text, G.H, r.fg, r.bg);
+        return { k: 'scroll', d: r.dir, w: p.w, h: p.h, pal: p.pal, px: p.px, ms: r.ms };
+    }
+    return null;
+  }
+  function sendRecipe(r) {
+    var cmd = toCmd(r);
+    if (!cmd) return;
+    if (cmd.w > 3000 || cmd.h > 3000) return toast('문구가 너무 깁니다');
+    send(cmd);
+    staged = null; refreshStaged();
+  }
+  function stage(r) {
+    var cmd = toCmd(r);
+    if (!cmd) return;
+    if (cmd.w > 3000 || cmd.h > 3000) return toast('문구가 너무 깁니다');
+    cmd.at = Date.now();
+    staged = { recipe: r, cmd: cmd };
+    refreshStaged();
+  }
+  function refreshStaged() {
+    $('#pv-send').disabled = !staged; $('#pv-cancel').disabled = !staged;
+    $('#pv-label').textContent = staged ? '대기: ' + labelOf(staged.recipe) + ' — 확인 후 송출을 누르세요' : '대기 중인 연출 없음';
+  }
+  /* 모든 장면 명령은 여기를 거침: 미리보기 모드면 대기, 아니면 즉시 송출 */
+  function scene(r) {
+    curRecipe = r;
+    if ($('#pv-on').checked) stage(r); else sendRecipe(r);
+  }
+  $('#pv-send').onclick = function () { if (staged) sendRecipe(staged.recipe); };
+  $('#pv-cancel').onclick = function () { staged = null; refreshStaged(); };
+  $('#pv-on').onchange = function () { try { localStorage.setItem('ls_pv', this.checked ? '1' : '0'); } catch (e) {} if (!this.checked) { staged = null; refreshStaged(); } };
+  try { if (localStorage.getItem('ls_pv') === '0') $('#pv-on').checked = false; } catch (e) {}
+  document.addEventListener('keydown', function (e) {
+    if (e.code !== 'Space' || /INPUT|TEXTAREA|SELECT/.test((e.target.tagName || ''))) return;
+    e.preventDefault();
+    if (staged && !e.repeat) sendRecipe(staged.recipe);
+  });
+  document.addEventListener('keyup', function (e) { if (e.code === 'Space' && !/INPUT|TEXTAREA|SELECT/.test((e.target.tagName || ''))) e.preventDefault(); });
+
+  function drawMonitor(cvs, st, now) {
+    if (!G) return;
+    var W = G.W, H = G.H, w = W * CS, h = H * CS;
+    if (cvs.width !== w || cvs.height !== h) { cvs.width = w; cvs.height = h; }
+    var x = cvs.getContext('2d');
+    x.fillStyle = '#000'; x.fillRect(0, 0, w, h);
+    for (var r = 0; r < H; r++) for (var c = 0; c < W; c++) {
+      if (!G.g[r][c]) continue;
+      var col = LS.colorAt(st, { r: r, c: c }, W, H, now);
+      x.fillStyle = col || '#16161e';
+      x.fillRect(c * CS + 1, r * CS + 1, CS - 2, CS - 2);
+    }
+  }
+  setInterval(function () {
+    if (!G) return;
+    var now = Date.now() + srvOffset;
+    while (liveQueue.length && liveQueue[0].at <= now) { LS.applyCmd(live, liveQueue.shift()); liveLabelDirty = true; }
+    if (liveLabelDirty) { liveLabelDirty = false; $('#live-label').textContent = liveLabel(); }
+    if ($('#p-show').classList.contains('hidden')) return;
+    drawMonitor($('#live-cv'), live, now);
+    drawMonitor($('#pv-cv'), staged ? { scene: staged.cmd, bl: null } : { scene: { k: 'off' }, bl: null }, Date.now());
+  }, 80);
+
+  /* ---------- 큐 리스트 (서버에 배치별로 저장) ---------- */
+  var cueList = [], cueIdx = -1;
+  function loadCues() {
+    api('GET', '/api/cues').then(function (c) { cueList = (activeL && c[activeL.id]) || []; cueIdx = -1; renderCues(); }).catch(function () {});
+  }
+  function saveCues() {
+    api('PUT', '/api/cues/' + encodeURIComponent(activeL.id), { cues: cueList }).catch(function (e) { toast('큐 저장 실패: ' + e.message); });
+  }
+  function renderCues() {
+    var host = $('#cue-list'); host.innerHTML = '';
+    cueList.forEach(function (c, i) {
+      var d = document.createElement('div'); d.className = 'lay' + (i === cueIdx ? ' cur' : ''); d.style.padding = '5px 8px';
+      var t = document.createElement('div'); t.style.cssText = 'flex:1;min-width:120px;font-size:14px';
+      t.textContent = (i + 1) + '. ' + c.name; var sm = document.createElement('div'); sm.className = 'stat'; sm.style.fontSize = '12px'; sm.textContent = labelOf(c.r); t.appendChild(sm);
+      d.appendChild(t);
+      var mk = function (txt, fn, cls) { var b = document.createElement('button'); b.className = 'btn ' + (cls || ''); b.style.padding = '4px 9px'; b.textContent = txt; b.onclick = fn; d.appendChild(b); };
+      mk('▶', function () { runCue(i); }, 'pri');
+      mk('▲', function () { if (i > 0) { swap(i, i - 1); } });
+      mk('▼', function () { if (i < cueList.length - 1) { swap(i, i + 1); } });
+      mk('✕', function () { cueList.splice(i, 1); if (cueIdx >= cueList.length) cueIdx = cueList.length - 1; saveCues(); renderCues(); }, 'red');
+      host.appendChild(d);
+    });
+    $('#cue-pos').textContent = cueList.length ? (cueIdx + 1) + ' / ' + cueList.length : '큐가 비어 있습니다';
+  }
+  function swap(i, j) {
+    var t = cueList[i]; cueList[i] = cueList[j]; cueList[j] = t;
+    if (cueIdx === i) cueIdx = j; else if (cueIdx === j) cueIdx = i;
+    saveCues(); renderCues();
+  }
+  function runCue(i) { cueIdx = i; renderCues(); scene(JSON.parse(JSON.stringify(cueList[i].r))); }
+  $('#cue-next').onclick = function () {
+    if (!cueList.length) return toast('큐가 비어 있습니다');
+    if (cueIdx >= cueList.length - 1) return toast('마지막 큐입니다');
+    runCue(cueIdx + 1);
+  };
+  $('#cue-prev').onclick = function () { if (cueList.length && cueIdx > 0) runCue(cueIdx - 1); };
+  $('#cue-add').onclick = function () {
+    var r = staged ? staged.recipe : curRecipe;
+    if (!r) return toast('먼저 추가할 연출을 만들거나 선택하세요(패턴/글씨/파도 등)');
+    cueList.push({ name: $('#cue-name').value.trim() || labelOf(r), r: JSON.parse(JSON.stringify(r)) });
+    $('#cue-name').value = '';
+    saveCues(); renderCues();
+  };
+  refreshStaged();
 
   /* ============================================================
      좌석 배치 편집기

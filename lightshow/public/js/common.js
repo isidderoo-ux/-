@@ -142,9 +142,54 @@
     return el;
   }
 
+  /* 연출 상태 계산 (관객 폰·운영자 미리보기/LIVE 모니터 공용) */
+  function applyCmd(st, m) {
+    switch (m.k) {
+      case 'bl': st.bl = m.hz ? { hz: m.hz, at: m.at } : null; break;
+      case 'br': st.br = m.v; break;
+      case 'off': st.scene = m; st.bl = null; break;
+      default: st.scene = m;
+    }
+  }
+  /* cell = {r,c} 또는 null(좌석 없는 건너뛰기 참여자: 전체 점등만 반응) */
+  function colorAt(st, cell, W, H, now) {
+    var s = st.scene, col = null;
+    if (s.k === 'full') col = s.c;
+    else if (cell) {
+      if (s.k === 'pat') {
+        if (s.w === W && s.h === H) col = s.pal[palIndex(s.px.charAt(cell.r * W + cell.c))] || null;
+      } else if (s.k === 'scroll') {
+        if (s.d === 'v') {
+          var oy = Math.floor((now - s.at) / s.ms) % (s.h + H);
+          if (oy < 0) oy = 0;
+          var y = oy - H + cell.r;
+          if (y >= 0 && y < s.h && s.w === W) col = s.pal[palIndex(s.px.charAt(y * s.w + cell.c))] || null;
+          else col = s.pal[0] || null;
+        } else {
+          var o = Math.floor((now - s.at) / s.ms) % (s.w + W);
+          if (o < 0) o = 0;
+          var x = o - W + cell.c;
+          if (x >= 0 && x < s.w && s.h === H) col = s.pal[palIndex(s.px.charAt(cell.r * s.w + x))] || null;
+          else col = s.pal[0] || null;
+        }
+      } else if (s.k === 'wave') {
+        var p = s.d === 'v' ? cell.r : cell.c, n = s.d === 'v' ? H : W;
+        var head = Math.floor((now - s.at) / s.ms) % (n + s.bw);
+        if (head < 0) head = 0;
+        col = p <= head && head - p < s.bw ? s.c : s.bg;
+      }
+    }
+    if (col && st.bl) {
+      var ph = Math.floor((now - st.bl.at) * Math.min(3, st.bl.hz) * 2 / 1000);
+      if (ph % 2 !== 0) col = null;
+    }
+    if (col === '#000000') col = null;
+    return col;
+  }
+
   return {
     MAX_ROWS: MAX_ROWS, MAX_SEATS: MAX_SEATS, ALIGNS: ALIGNS, B62: B62, HEX: HEX,
     sanitize: sanitize, cols: cols, rowStart: rowStart, grid: grid, lid: lid,
-    encodePx: encodePx, decodePx: decodePx, palIndex: palIndex, mapDOM: mapDOM, clampI: clampI
+    encodePx: encodePx, decodePx: decodePx, palIndex: palIndex, applyCmd: applyCmd, colorAt: colorAt, mapDOM: mapDOM, clampI: clampI
   };
 });

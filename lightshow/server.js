@@ -51,8 +51,23 @@ const activeLayout = () => getLayout(db.active);
 const geomKey = (l) => JSON.stringify([l.rows, l.rowSeats, l.rowAlign, l.blocked.slice().sort()]);
 
 /* ---------- 연출 상태(새로 접속한 폰에 즉시 전달) ---------- */
+const hex = (c, d) => (typeof c === 'string' && C.HEX.test(c) ? c.toLowerCase() : d);
+const num = (v, a, b, d) => { v = +v; return isFinite(v) ? Math.min(b, Math.max(a, v)) : d; };
+const F_STATE = path.join(DATA_DIR, 'state.json');
+const F_CUES = path.join(DATA_DIR, 'cues.json');
 let state = { scene: { k: 'off' }, bl: null, br: 0.7 };
-function resetState() { state = { scene: { k: 'off' }, bl: null, br: state.br }; }
+function resetState() { state = { scene: { k: 'off' }, bl: null, br: state.br }; persistState(); }
+/* 서버가 재시작돼도 마지막 연출을 복원 (같은 배치 ID일 때만) */
+let persistTimer = null;
+function persistState() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => { try { writeJson(F_STATE, { lid: C.lid(activeLayout()), state }); } catch (e) {} }, 400);
+}
+(function restoreState() {
+  const s = readJson(F_STATE, null);
+  if (s && s.state && s.state.scene && s.lid === C.lid(activeLayout())) state = s.state;
+})();
+let cues = readJson(F_CUES, {}); // { 배치id: [ {name, r:{t,...}} ] }
 
 /* ---------- 인증 ---------- */
 const tokens = new Map();
@@ -131,8 +146,8 @@ app.delete('/api/layouts/:id', auth, (req, res) => {
   if (req.params.id === db.active) return res.status(400).json({ error: '활성 배치는 삭제할 수 없습니다' });
   if (db.layouts.length <= 1) return res.status(400).json({ error: '마지막 배치는 삭제할 수 없습니다' });
   db.layouts = db.layouts.filter((l) => l.id !== req.params.id);
-  delete patterns[req.params.id];
-  saveLayouts(); savePatterns();
+  delete patterns[req.params.id]; delete cues[req.params.id];
+  saveLayouts(); savePatterns(); writeJson(F_CUES, cues);
   res.json({ ok: true });
 });
 
@@ -189,6 +204,27 @@ app.delete('/api/patterns/:lid/:name', auth, (req, res) => {
   if (patterns[req.params.lid]) delete patterns[req.params.lid][req.params.name];
   savePatterns();
   res.json({ ok: true });
+});
+
+/* ---------- 큐 리스트 (배치별 저장) ---------- */
+const CUE_T = ['full', 'pat', 'wave', 'text', 'off'];
+function cleanCue(c) {
+  if (!c || typeof c !== 'object' || !c.r || typeof c.r !== 'object' || CUE_T.indexOf(c.r.t) < 0) return null;
+  const r = c.r, o = { t: r.t };
+  if (r.t === 'full') o.c = hex(r.c, '#ffffff');
+  else if (r.t === 'wave') Object.assign(o, { d: r.d === 'h' ? 'h' : 'v', c: hex(r.c, '#ffffff'), ms: num(r.ms, 100, 1000, 250) | 0 });
+  else if (r.t === 'text') Object.assign(o, { text: String(r.text || '').slice(0, 40), dir: r.dir === 'v' ? 'v' : 'h', fg: hex(r.fg, '#ffffff'), bg: hex(r.bg, '#000000'), ms: num(r.ms, 170, 1000, 250) | 0 });
+  else if (r.t === 'pat') { const p = cleanPattern(r); if (!p) return null; Object.assign(o, p); }
+  return { name: String(c.name || '').slice(0, 30) || '이름 없음', r: o };
+}
+app.get('/api/cues', auth, (req, res) => res.json(cues));
+app.put('/api/cues/:lid', auth, (req, res) => {
+  if (!getLayout(req.params.lid)) return res.status(404).json({ error: 'not found' });
+  const list = Array.isArray(req.body && req.body.cues) ? req.body.cues.slice(0, 100).map(cleanCue).filter(Boolean) : null;
+  if (!list) return res.status(400).json({ error: 'cues' });
+  cues[req.params.lid] = list;
+  writeJson(F_CUES, cues);
+  res.json({ ok: true, n: list.length });
 });
 
 const server = process.env.SSL_CERT && process.env.SSL_KEY
@@ -256,8 +292,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => { aud.delete(socket.id); seats.delete(socket.id); presDirty = true; });
 });
 
-const hex = (c, d) => (typeof c === 'string' && C.HEX.test(c) ? c.toLowerCase() : d);
-const num = (v, a, b, d) => { v = +v; return isFinite(v) ? Math.min(b, Math.max(a, v)) : d; };
 
 function handleCmd(m) {
   if (!m || typeof m !== 'object') return { ok: false };
@@ -294,6 +328,7 @@ function handleCmd(m) {
   out.lid = C.lid(L);
   out.at = at;
   if (out.k === 'bl' && state.bl) state.bl.at = at;
+  persistState();
   io.emit('c', out);
   return { ok: true, at };
 }

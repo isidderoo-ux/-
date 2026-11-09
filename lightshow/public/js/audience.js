@@ -99,52 +99,12 @@
   }
 
   /* ---------- 연출 렌더링 ---------- */
-  function apply(m) {
-    switch (m.k) {
-      case 'bl': st.bl = m.hz ? { hz: m.hz, at: m.at } : null; break;
-      case 'br': st.br = m.v; break;
-      case 'off': st.scene = m; st.bl = null; break;
-      default: st.scene = m;
-    }
-  }
+  function apply(m) { LS.applyCmd(st, m); }
   function myCell() {
     if (!seat || seat.skip || !L) return null;
     return { r: seat.r, c: LS.rowStart(L, seat.r, G.W) + seat.i };
   }
-  function colorAt(now) {
-    var s = st.scene, cell = myCell(), col = null, W = G.W, H = G.H;
-    if (s.k === 'full') col = s.c;
-    else if (cell) {
-      if (s.k === 'pat') {
-        if (s.w === W && s.h === H) col = s.pal[LS.palIndex(s.px.charAt(cell.r * W + cell.c))] || null;
-      } else if (s.k === 'scroll') {
-        if (s.d === 'v') { // 세로: 아래에서 위로 올라감
-          var oy = Math.floor((now - s.at) / s.ms) % (s.h + H);
-          if (oy < 0) oy = 0;
-          var y = oy - H + cell.r;
-          if (y >= 0 && y < s.h && s.w === W) col = s.pal[LS.palIndex(s.px.charAt(y * s.w + cell.c))] || null;
-          else col = s.pal[0] || null;
-        } else {
-          var o = Math.floor((now - s.at) / s.ms) % (s.w + W);
-          if (o < 0) o = 0;
-          var x = o - W + cell.c;
-          if (x >= 0 && x < s.w && s.h === H) col = s.pal[LS.palIndex(s.px.charAt(cell.r * s.w + x))] || null;
-          else col = s.pal[0] || null;
-        }
-      } else if (s.k === 'wave') {
-        var p = s.d === 'v' ? cell.r : cell.c, n = s.d === 'v' ? H : W;
-        var head = Math.floor((now - s.at) / s.ms) % (n + s.bw);
-        if (head < 0) head = 0;
-        col = p <= head && head - p < s.bw ? s.c : s.bg;
-      }
-    }
-    if (col && st.bl) {
-      var ph = Math.floor((now - st.bl.at) * Math.min(3, st.bl.hz) * 2 / 1000);
-      if (ph % 2 !== 0) col = null;
-    }
-    if (col === '#000000') col = null;
-    return col;
-  }
+  function colorAt(now) { return LS.colorAt(st, myCell(), G.W, G.H, now); }
 
   /* 안전장치: 어떤 명령이 와도 이 폰은 켜짐 전환이 초당 3회를 넘지 못함 */
   var onTimes = [], lastLit = false, shown = undefined;

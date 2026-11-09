@@ -23,6 +23,8 @@
     <span class="stat">자리 등록 <b id="st-seated">0</b> / <span id="st-total">0</span> · 건너뛰기 <b id="st-skip">0</b></span>
     <span class="stat">활성 배치: <b id="st-layout" style="font-size:16px"></b></span>
     <span class="stat" id="st-conn"></span>
+    <button class="btn red" id="estop" style="font-weight:700;font-size:16px">⏹ 비상 정지</button>
+    <label class="stat"><input type="checkbox" id="pv-on" checked> 송출 전 미리보기</label>
     <button class="btn" id="qr-btn">📱 접속 QR</button>
     <a class="btn" href="/print.html" target="_blank" style="text-decoration:none;color:#fff">🖨 번호표 출력</a>
     <button class="btn" id="logout">로그아웃</button>
@@ -31,6 +33,34 @@
 
   <!-- 연출 -->
   <div id="p-show" class="cols" style="margin-top:0">
+    <div class="panel" style="grid-column:1/-1">
+      <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+        <div>
+          <h3>👁 미리보기 (대기 중)</h3>
+          <canvas id="pv-cv" style="background:#000;border-radius:6px;display:block"></canvas>
+          <div class="stat" id="pv-label" style="margin:4px 0">대기 중인 연출 없음</div>
+          <div class="row"><button class="btn pri" id="pv-send" disabled>▶ 송출 (Space)</button><button class="btn" id="pv-cancel" disabled>취소</button></div>
+        </div>
+        <div>
+          <h3 style="color:#ff6b6b">🔴 LIVE (지금 나가는 화면)</h3>
+          <canvas id="live-cv" style="background:#000;border-radius:6px;display:block"></canvas>
+          <div class="stat" id="live-label" style="margin:4px 0">꺼짐</div>
+        </div>
+        <div style="flex:1;min-width:300px">
+          <h3>🎬 큐 리스트 (이 배치용)</h3>
+          <div class="row">
+            <input type="text" id="cue-name" placeholder="큐 이름(비우면 자동)" maxlength="30" style="width:170px">
+            <button class="btn" id="cue-add">➕ 현재 연출 추가</button>
+          </div>
+          <div class="row">
+            <button class="btn" id="cue-prev">◀ 이전</button>
+            <button class="btn pri" id="cue-next" style="font-size:17px;padding:10px 22px">다음 ▶</button>
+            <span class="stat" id="cue-pos"></span>
+          </div>
+          <div id="cue-list" style="max-height:230px;overflow:auto"></div>
+        </div>
+      </div>
+    </div>
     <div class="panel">
       <h3>접속 현황 (초록=접속, 주황=한 자리에 2명 이상)</h3>
       <div id="occ" style="overflow:auto;text-align:center"></div>
