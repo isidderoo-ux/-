@@ -118,11 +118,19 @@
       if (s.k === 'pat') {
         if (s.w === W && s.h === H) col = s.pal[LS.palIndex(s.px.charAt(cell.r * W + cell.c))] || null;
       } else if (s.k === 'scroll') {
-        var o = Math.floor((now - s.at) / s.ms) % (s.w + W);
-        if (o < 0) o = 0;
-        var x = o - W + cell.c;
-        if (x >= 0 && x < s.w && s.h === H) col = s.pal[LS.palIndex(s.px.charAt(cell.r * s.w + x))] || null;
-        else col = s.pal[0] || null;
+        if (s.d === 'v') { // 세로: 아래에서 위로 올라감
+          var oy = Math.floor((now - s.at) / s.ms) % (s.h + H);
+          if (oy < 0) oy = 0;
+          var y = oy - H + cell.r;
+          if (y >= 0 && y < s.h && s.w === W) col = s.pal[LS.palIndex(s.px.charAt(y * s.w + cell.c))] || null;
+          else col = s.pal[0] || null;
+        } else {
+          var o = Math.floor((now - s.at) / s.ms) % (s.w + W);
+          if (o < 0) o = 0;
+          var x = o - W + cell.c;
+          if (x >= 0 && x < s.w && s.h === H) col = s.pal[LS.palIndex(s.px.charAt(cell.r * s.w + x))] || null;
+          else col = s.pal[0] || null;
+        }
       } else if (s.k === 'wave') {
         var p = s.d === 'v' ? cell.r : cell.c, n = s.d === 'v' ? H : W;
         var head = Math.floor((now - s.at) / s.ms) % (n + s.bw);

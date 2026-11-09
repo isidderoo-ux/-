@@ -87,6 +87,7 @@
         <h3>흐르는 글씨</h3>
         <div class="row">
           <input type="text" id="txt" placeholder="예: 주님 사랑해요" maxlength="40" style="width:230px">
+          <select id="txt-dir"><option value="h">가로 (오른쪽→왼쪽)</option><option value="v">세로 (아래→위)</option></select>
           <button class="btn pri" id="send-txt">▶ 송출</button>
         </div>
         <div class="row">
@@ -95,7 +96,7 @@
           <span class="stat">속도(칸당)</span>
           <input type="range" id="txt-ms" min="170" max="600" step="10" value="250"><b id="txt-v" style="font-size:14px">250ms</b>
         </div>
-        <canvas id="txtprev" style="max-width:100%;background:#000;border-radius:4px"></canvas>
+        <div style="max-height:320px;overflow:auto"><canvas id="txtprev" style="max-width:100%;background:#000;border-radius:4px"></canvas></div>
         <div class="stat"><small>글씨 폭이 좁은 배치는 읽기 어려울 수 있어요. 속도는 안전 규칙상 칸당 170ms 이상만 가능합니다.</small></div>
       </div>
     </div>

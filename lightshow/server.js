@@ -165,9 +165,9 @@ app.post('/api/import', auth, (req, res) => {
   res.json({ imported: n });
 });
 
-function cleanPattern(p) {
+function cleanPattern(p, maxH) {
   if (!p || typeof p !== 'object') return null;
-  const w = C.clampI(p.w, 1, 3000, 0), h = C.clampI(p.h, 1, C.MAX_ROWS, 0);
+  const w = C.clampI(p.w, 1, 3000, 0), h = C.clampI(p.h, 1, maxH || C.MAX_ROWS, 0);
   if (!w || !h || typeof p.px !== 'string' || p.px.length !== w * h || !Array.isArray(p.pal)) return null;
   const pal = p.pal.slice(0, 62);
   if (!pal.every((c) => C.HEX.test(c))) return null;
@@ -275,9 +275,10 @@ function handleCmd(m) {
       out = { k: 'pat', w: W, h: H, pal: p.pal, px: p.px }; state.scene = out; break;
     }
     case 'scroll': {
-      const p = cleanPattern(m);
-      if (!p || p.h !== H) return { ok: false, err: 'size' };
-      out = { k: 'scroll', w: p.w, h: H, pal: p.pal, px: p.px, ms: num(m.ms, 170, 1000, 250) }; state.scene = out; break;
+      const vert = m.d === 'v'; // 세로 글씨: 폭 = 배치 칸수, 길이 = 자유(최대 3000줄)
+      const p = cleanPattern(m, vert ? 3000 : C.MAX_ROWS);
+      if (!p || (vert ? p.w !== W : p.h !== H) || p.w * p.h > 200000) return { ok: false, err: 'size' };
+      out = { k: 'scroll', d: vert ? 'v' : 'h', w: p.w, h: p.h, pal: p.pal, px: p.px, ms: num(m.ms, 170, 1000, 250) }; state.scene = out; break;
     }
     case 'wave':
       out = { k: 'wave', d: m.d === 'h' ? 'h' : 'v', c: hex(m.c, '#ffffff'), bg: hex(m.bg, '#000000'), ms: num(m.ms, 100, 1000, 250) | 0, bw: num(m.bw, 1, 6, 3) | 0 };

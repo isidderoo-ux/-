@@ -286,30 +286,52 @@
   $('#wave-h').onclick = function () { send({ k: 'wave', d: 'h', c: cur, bg: '#000000', ms: +$('#wave-ms').value, bw: 3 }); };
 
   /* ---------- 흐르는 글씨 (한글 지원: 브라우저 폰트를 현재 배치 높이로 픽셀화) ---------- */
-  function renderText(text, H, fg, bg) {
-    var ss = 4, fs = Math.max(6, (H >= 10 ? H - 2 : H)) * ss;
-    var m = document.createElement('canvas').getContext('2d');
-    var font = 'bold ' + fs + 'px "Malgun Gothic","Apple SD Gothic Neo","Noto Sans CJK KR","Noto Sans KR","NanumGothic",sans-serif';
-    m.font = font;
-    var wpx = Math.ceil(m.measureText(text).width) + ss * 2;
-    var cw = Math.ceil(wpx / ss) * ss, c = document.createElement('canvas');
-    c.width = cw; c.height = H * ss;
+  var FONT = '"Malgun Gothic","Apple SD Gothic Neo","Noto Sans CJK KR","Noto Sans KR","NanumGothic",sans-serif';
+  var SS = 4; // 4배 크게 그린 뒤 칸 단위로 줄여 픽셀화
+  function rasterize(cw, ch, draw, fg, bg) {
+    var c = document.createElement('canvas'); c.width = cw * SS; c.height = ch * SS;
     var x = c.getContext('2d');
     x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
-    x.fillStyle = '#fff'; x.font = font; x.textBaseline = 'middle'; x.textAlign = 'left';
-    x.fillText(text, ss, c.height / 2 + fs * 0.05);
-    var img = x.getImageData(0, 0, c.width, c.height).data, w = cw / ss, bits = '';
-    for (var r = 0; r < H; r++) for (var col = 0; col < w; col++) {
+    x.fillStyle = '#fff'; draw(x);
+    var img = x.getImageData(0, 0, c.width, c.height).data, bits = '';
+    for (var r = 0; r < ch; r++) for (var col = 0; col < cw; col++) {
       var sum = 0;
-      for (var yy = 0; yy < ss; yy++) for (var xx = 0; xx < ss; xx++) sum += img[((r * ss + yy) * c.width + col * ss + xx) * 4];
-      bits += sum / (ss * ss * 255) > 0.4 ? '1' : '0';
+      for (var yy = 0; yy < SS; yy++) for (var xx = 0; xx < SS; xx++) sum += img[((r * SS + yy) * c.width + col * SS + xx) * 4];
+      bits += sum / (SS * SS * 255) > 0.4 ? '1' : '0';
     }
-    return { w: w, h: H, pal: [bg, fg], px: bits };
+    return { w: cw, h: ch, pal: [bg, fg], px: bits };
+  }
+  /* 가로 글씨: 현재 배치 높이에 맞춰 픽셀화 */
+  function renderText(text, H, fg, bg) {
+    var fs = Math.max(6, (H >= 10 ? H - 2 : H)) * SS, font = 'bold ' + fs + 'px ' + FONT;
+    var m = document.createElement('canvas').getContext('2d'); m.font = font;
+    var cw = Math.ceil((Math.ceil(m.measureText(text).width) + SS * 2) / SS);
+    return rasterize(cw, H, function (x) {
+      x.font = font; x.textBaseline = 'middle'; x.textAlign = 'left';
+      x.fillText(text, SS, H * SS / 2 + fs * 0.05);
+    }, fg, bg);
+  }
+  /* 세로 글씨: 글자를 위아래로 쌓음. 글자 크기 = 현재 배치 폭(칸수)에 맞춤 */
+  function renderTextV(text, W, fg, bg) {
+    var size = Math.max(5, W >= 8 ? W - 2 : W), pitch = size + 1;
+    var chars = Array.from(text.replace(/\s+/g, ' ')), rows = 1;
+    chars.forEach(function (ch) { rows += ch === ' ' ? Math.ceil(pitch / 2) : pitch; });
+    var fs = size * SS, font = 'bold ' + fs + 'px ' + FONT;
+    return rasterize(W, rows, function (x) {
+      x.font = font; x.textBaseline = 'middle'; x.textAlign = 'center';
+      var y = 1;
+      chars.forEach(function (ch) {
+        if (ch === ' ') { y += Math.ceil(pitch / 2); return; }
+        x.fillText(ch, W * SS / 2, (y + size / 2) * SS + fs * 0.05);
+        y += pitch;
+      });
+    }, fg, bg);
   }
   function previewText() {
     var t = $('#txt').value.trim(), cvp = $('#txtprev');
     if (!t || !G) { cvp.width = 1; cvp.height = 1; return null; }
-    var p = renderText(t.slice(0, 40), G.H, $('#txt-c').value, $('#txt-bg').value), k = 5;
+    var vert = $('#txt-dir').value === 'v', k = vert ? 4 : 5;
+    var p = vert ? renderTextV(t.slice(0, 40), G.W, $('#txt-c').value, $('#txt-bg').value) : renderText(t.slice(0, 40), G.H, $('#txt-c').value, $('#txt-bg').value);
     cvp.width = p.w * k; cvp.height = p.h * k;
     var x = cvp.getContext('2d');
     for (var i = 0; i < p.px.length; i++) {
@@ -318,14 +340,14 @@
     }
     return p;
   }
-  ['#txt', '#txt-c', '#txt-bg'].forEach(function (s) { $(s).oninput = previewText; });
+  ['#txt', '#txt-c', '#txt-bg', '#txt-dir'].forEach(function (s) { $(s).oninput = previewText; });
   $('#txt-ms').oninput = function () { $('#txt-v').textContent = this.value + 'ms'; };
   $('#send-txt').onclick = function () {
     var p = previewText();
     if (!p) return toast('문구를 입력하세요');
-    if (p.w > 3000) return toast('문구가 너무 깁니다');
+    if (p.w > 3000 || p.h > 3000) return toast('문구가 너무 깁니다');
     // 글씨 pal[0]=배경색, pal[1]=글자색. 서버는 pal 최대 62색까지 허용
-    send({ k: 'scroll', w: p.w, h: p.h, pal: p.pal, px: p.px, ms: +$('#txt-ms').value });
+    send({ k: 'scroll', d: $('#txt-dir').value, w: p.w, h: p.h, pal: p.pal, px: p.px, ms: +$('#txt-ms').value });
   };
 
   /* ============================================================
