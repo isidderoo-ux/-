@@ -13,6 +13,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
   <script src="data.js"></script>
+  <script src="daily/courage.js"></script>
+  <script src="daily/faith.js"></script>
+  <script src="daily/breakthrough.js"></script>
+  <script src="daily/certainty.js"></script>
+  <script src="daily/love.js"></script>
+  <script src="daily/together.js"></script>
+  <script src="daily/skill.js"></script>
   <style>
     :root { --accent: #f97316; --frame: #fcd34d; --cream: #fffbea; --ink: #3b2a1a; --tip: #3f6212; }
     * { box-sizing: border-box; }
@@ -153,7 +160,13 @@
   } else {
     document.title = `오늘의 키워드 · ${kw.name}`;
     document.documentElement.style.setProperty("--accent", kw.color);
-    const tip = kw.tips[((dayNumber(ymd) % kw.tips.length) + kw.tips.length) % kw.tips.length];
+    // 날짜별 문구: START_DATE 가 1일차, 하루에 한 줄씩
+    const rows = (DAILY[kw.id] || "").trim().split("\n").map(r => r.split(" ## ").map(x => x.replace(/ \| /g, "\n")));
+    let idx = dayNumber(ymd) - dayNumber(START_DATE);
+    if (idx < 0) idx = 0;
+    const dayNo = idx + 1;
+    idx = idx % rows.length;              // 60일이 지나면 처음부터 다시
+    const [quote, tip] = rows[idx];
     const [y, m, d] = ymd.split("-").map(Number);
     const wd = "일월화수목금토"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 
@@ -174,12 +187,12 @@
         </div>
       </div>
       <div class="quote reveal d3">
-        <span class="q open">“</span>${fmtQuote(kw.quote)}<span class="q close">”</span>
+        <span class="q open">“</span>${fmtQuote(quote)}<span class="q close">”</span>
       </div>
       <div class="tip-head reveal d4"><span>💡 오늘의 실천 꿀팁</span></div>
       <div class="tip reveal d4">
         ${fmtTip(tip)}
-        <div class="date">${m}월 ${d}일 (${wd}) · 꿀팁은 매일 바뀌어요</div>
+        <div class="date">${m}월 ${d}일 (${wd}) · ${dayNo}일차 · 내일은 새 문구가 나와요</div>
       </div>
       <div class="actions reveal d4">
         <button id="share">📤 카드 공유하기</button>
