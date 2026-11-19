@@ -66,6 +66,7 @@
   const SCAN_COOLDOWN_MS = 5000;    // 동일 ID 재스캔 무시 시간
   const QR_REFRESH_SEC = 15;        // QR 타임스탬프 갱신 주기
   const QR_MAX_AGE_MIN = 30;        // 스캔 시 허용하는 QR 유효 시간(분). 캡처 화면 재사용 방지
+  const RETENTION_DAYS = 30;        // 출석 기록 보관 기간(일). apps-script.gs 의 RETENTION_DAYS 와 같게
   const STORAGE_KEY = "qrPass.v1";
   const LOG_KEY = "qrPass.scanLog.v1";
   const CAMERA_KEY = "qrPass.camera.v1";
@@ -241,10 +242,9 @@
             class="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
           <select id="listRange"
             class="hidden flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="2">최근 2회 모임</option>
             <option value="4">최근 4회 모임</option>
-            <option value="8" selected>최근 8회 모임</option>
-            <option value="12">최근 12회 모임</option>
-            <option value="0">전체 기간</option>
+            <option value="0" selected>보관 기간 전체 (30일)</option>
           </select>
           <button id="listRefreshBtn" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">새로고침</button>
         </div>
@@ -692,7 +692,7 @@ function onScanSuccess(decodedText) {
   showBanner("success", `${data.name} (#${data.id})님 출석 완료!`);
 
   scanLog.unshift({ id: data.id, name: data.name, time });
-  safeSet(LOG_KEY, scanLog);
+  pruneLocalRecords();
   renderLog();
 
   sendToSheet({ id: data.id, name: data.name, time });
@@ -700,6 +700,21 @@ function onScanSuccess(decodedText) {
 
 // ---------- 구글 시트 전송 (실패 시 대기열에 보관 후 자동 재전송) ----------
 let sendQueue = safeGet(QUEUE_KEY) || [];
+
+/** 이 날짜 이하(yyyy-MM-dd)의 기록은 보관 기간이 지난 것 */
+function retentionCutoff() {
+  return formatDateTime(new Date(Date.now() - RETENTION_DAYS * 86400000)).split(" ")[0];
+}
+
+/** 태블릿에 남은 기록·전송 대기열에서 보관 기간이 지난 것을 지움 */
+function pruneLocalRecords() {
+  const cutoff = retentionCutoff();
+  const fresh = (r) => r.time.slice(0, 10) > cutoff;
+  scanLog = scanLog.filter(fresh);
+  sendQueue = sendQueue.filter(fresh);
+  safeSet(LOG_KEY, scanLog);
+  safeSet(QUEUE_KEY, sendQueue);
+}
 let flushing = false;
 
 function sendToSheet(record) {
@@ -890,7 +905,7 @@ function renderList(out) {
 function renderSummary(out) {
   const range = Number($("listRange").value);
   const attended = out.people.filter((p) => p.total > 0).length;
-  setHeadline(`${range ? "최근" : "전체"} ${out.dates.length}회 모임 ·`, attended, `명 출석 (전체 ${out.people.length}명)`);
+  setHeadline(`${range ? "최근" : "30일간"} ${out.dates.length}회 모임 ·`, attended, `명 출석 (전체 ${out.people.length}명)`);
 
   const head = $("personHead");
   head.innerHTML = "";
@@ -1019,6 +1034,11 @@ document.addEventListener("visibilitychange", () => {
     showLogin();
   }
   switchTab("user");
+  pruneLocalRecords();
+  // 명단 날짜 선택은 보관 기간 안에서만
+  const minDay = new Date(Date.now() - (RETENTION_DAYS - 1) * 86400000);
+  $("listDate").min = formatDateTime(minDay).split(" ")[0];
+  $("listDate").max = todayStr();
   flushQueue(); // 이전에 못 보낸 기록이 있으면 재전송
   setListMode("date");
   updateFullscreenBtn();
