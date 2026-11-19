@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#fcd34d" />
+  <title>오늘의 키워드</title>
+  <meta name="description" content="룰렛을 돌리고 QR을 찍어 오늘의 키워드 카드를 받아보세요" />
+  <meta property="og:title" content="오늘의 키워드 카드" />
+  <meta property="og:description" content="룰렛을 돌리고 QR을 찍어 오늘의 키워드 카드를 받아보세요" />
+  <link rel="icon" type="image/png" href="../favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
+  <script src="data.js"></script>
+  <script src="daily/courage.js"></script>
+  <script src="daily/faith.js"></script>
+  <script src="daily/breakthrough.js"></script>
+  <script src="daily/certainty.js"></script>
+  <script src="daily/love.js"></script>
+  <script src="daily/together.js"></script>
+  <script src="daily/skill.js"></script>
+  <style>
+    :root { --accent: #f97316; --frame: #fcd34d; --cream: #fffbea; --ink: #3b2a1a; --tip: #3f6212; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      background: var(--frame);
+      background-image: radial-gradient(circle at 20% 10%, #fde68a 0 30%, transparent 60%), radial-gradient(circle at 90% 90%, #fde68a 0 25%, transparent 60%);
+      font-family: "Jua", "Gowun Dodum", system-ui, sans-serif;
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .card {
+      width: 100%; max-width: 440px;
+      padding: 18px 16px calc(env(safe-area-inset-bottom) + 20px);
+      position: relative;
+    }
+    .corner { position: absolute; font-size: 28px; color: #fb923c; opacity: .9; }
+    .corner.tl { top: 8px; left: 10px; } .corner.tr { top: 8px; right: 10px; }
+
+    /* 헤더 */
+    .eyebrow { text-align: center; font-size: 22px; color: #1e3a5f; margin: 8px 0 4px; letter-spacing: 1px; }
+    .eyebrow .ray { color: #f59e0b; }
+    .cloud {
+      position: relative; margin: 0 auto; width: 78%;
+      background: var(--accent); color: #fff; text-align: center;
+      font-size: clamp(64px, 20vw, 92px); line-height: 1.15; padding: 6px 0 12px;
+      border-radius: 999px; border: 4px solid rgba(0,0,0,.12);
+      box-shadow: 0 6px 0 rgba(0,0,0,.12), inset 0 -6px 0 rgba(0,0,0,.08);
+      text-shadow: 0 3px 0 rgba(0,0,0,.15);
+    }
+    .cloud::before, .cloud::after {
+      content: ""; position: absolute; background: var(--accent); border-radius: 50%; z-index: -1;
+      border: 4px solid rgba(0,0,0,.12);
+    }
+    .cloud::before { width: 34%; height: 70%; top: -22%; left: 16%; }
+    .cloud::after  { width: 28%; height: 60%; top: -16%; right: 18%; }
+    .cloud-wrap { position: relative; z-index: 0; padding-top: 14px; }
+    .sparkle { position: absolute; top: 40%; font-size: 26px; color: #92400e; }
+    .sparkle.l { left: 2%; } .sparkle.r { right: 2%; }
+
+    /* 그림 */
+    .scene {
+      margin-top: 14px; border-radius: 26px; overflow: hidden; position: relative;
+      aspect-ratio: 773 / 390; background: linear-gradient(#7cc4f5, #c9e9ff 70%, #d9f2c4);
+      box-shadow: 0 4px 0 rgba(0,0,0,.08);
+    }
+    .scene img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .fallback { position: absolute; inset: 0; }
+    .fallback .sun { position: absolute; left: 10%; top: 18%; font-size: 64px; animation: float 3s ease-in-out infinite; }
+    .fallback .hero { position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); font-size: 96px; animation: bounce 1.8s ease-in-out infinite; }
+    .fallback .hill { position: absolute; bottom: -40%; left: -10%; right: -10%; height: 70%; background: #86c56b; border-radius: 50%; }
+    .fallback .flag {
+      position: absolute; right: 10%; top: 14%; background: #fff; color: #1e3a5f; font-size: 26px;
+      padding: 6px 16px; border-radius: 8px; border-left: 6px solid #8b5e34; transform: rotate(-6deg);
+      box-shadow: 0 3px 0 rgba(0,0,0,.1);
+    }
+    .fallback .cl { position: absolute; color: #fff; font-size: 40px; opacity: .9; }
+    @keyframes bounce { 0%,100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(-10px); } }
+    @keyframes float { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-8px) rotate(8deg); } }
+
+    /* 말씀 박스 */
+    .quote {
+      margin-top: -18px; position: relative; background: var(--cream); border-radius: 28px;
+      padding: 26px 22px 20px; text-align: center; font-size: 17px; line-height: 1.7; word-break: keep-all;
+      box-shadow: 0 4px 0 rgba(0,0,0,.06);
+    }
+    .quote .q { position: absolute; font-size: 54px; color: #f59e0b; line-height: 1; font-family: Georgia, serif; }
+    .quote .q.open { left: 12px; top: 10px; } .quote .q.close { right: 14px; bottom: -6px; }
+    .hl { color: var(--accent); font-size: 1.35em; background: linear-gradient(transparent 60%, #fde68a 60%); padding: 0 2px; }
+
+    /* 실천 꿀팁 */
+    .tip-head { display: flex; justify-content: center; margin-top: 18px; position: relative; z-index: 1; }
+    .tip-head span {
+      background: #4d7c0f; color: #fff; font-size: 21px; padding: 6px 20px 6px 14px; border-radius: 999px;
+      box-shadow: 0 3px 0 rgba(0,0,0,.12);
+    }
+    .tip {
+      margin-top: -14px; background: #f7fee7; border: 3px solid #bef264; border-radius: 28px;
+      padding: 28px 18px 18px; text-align: center; color: var(--tip); font-size: 18px; line-height: 1.65; word-break: keep-all;
+    }
+    .tip mark { background: linear-gradient(transparent 55%, #fed7aa 55%); color: #ea580c; padding: 0 2px; }
+    .date { margin-top: 10px; font-family: "Gowun Dodum", sans-serif; font-size: 13px; color: #65a30d; }
+
+    .foot { text-align: center; margin-top: 16px; font-family: "Gowun Dodum", sans-serif; font-size: 13px; color: #92400e; }
+    .actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+    .actions button {
+      font-family: inherit; font-size: 16px; border: 0; border-radius: 999px; padding: 10px 18px;
+      background: #fff; color: var(--ink); box-shadow: 0 3px 0 rgba(0,0,0,.12); cursor: pointer;
+    }
+
+    /* 등장 애니메이션 */
+    .reveal { animation: pop .6s cubic-bezier(.2,1.4,.4,1) both; }
+    .reveal.d1 { animation-delay: .1s; } .reveal.d2 { animation-delay: .35s; } .reveal.d3 { animation-delay: .6s; } .reveal.d4 { animation-delay: .85s; }
+    @keyframes pop { from { opacity: 0; transform: scale(.85) translateY(16px); } to { opacity: 1; transform: none; } }
+
+    /* 키워드 목록(파라미터 없을 때) */
+    .list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 18px; }
+    .list a {
+      display: block; text-align: center; text-decoration: none; color: #fff; font-size: 26px;
+      padding: 18px 8px; border-radius: 20px; box-shadow: 0 4px 0 rgba(0,0,0,.12);
+    }
+    .list a small { display: block; font-size: 30px; }
+  </style>
+</head>
+<body>
+  <main class="card" id="app"></main>
+
+<script>
+  // 한국 시간 기준 오늘 날짜 (YYYY-MM-DD)
+  function todayKST() {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  }
+  function dayNumber(ymd) {
+    const [y, m, d] = ymd.split("-").map(Number);
+    return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+  }
+  function esc(s) { return s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+  // *단어* → 키워드 강조,  '단어' → 형광펜,  줄바꿈 → <br>
+  function fmtQuote(s) { return esc(s).replace(/\*(.+?)\*/g, '<span class="hl">$1</span>').replace(/\n/g, "<br>"); }
+  function fmtTip(s) { return esc(s).replace(/'(.+?)'/g, "<mark>‘$1’</mark>").replace(/\n/g, "<br>"); }
+
+  const app = document.getElementById("app");
+  const params = new URLSearchParams(location.search);
+  const kw = KEYWORDS.find(k => k.id === (params.get("k") || "").toLowerCase());
+  // ?d=2026-12-01 로 다른 날짜의 꿀팁 미리보기 가능
+  const ymd = /^\d{4}-\d{2}-\d{2}$/.test(params.get("d") || "") ? params.get("d") : todayKST();
+
+  if (!kw) {
+    document.title = "오늘의 키워드";
+    app.innerHTML = `
+      <div class="eyebrow reveal">오늘의 키워드</div>
+      <p class="foot reveal d1" style="font-size:16px">룰렛을 돌리고 나온 키워드의 QR을 찍어주세요!</p>
+      <div class="list">
+        ${KEYWORDS.map((k, i) => `<a class="reveal d${Math.min(i, 4)}" style="background:${k.color}" href="?k=${k.id}"><small>${k.emoji}</small>${k.name}</a>`).join("")}
+      </div>`;
+  } else {
+    document.title = `오늘의 키워드 · ${kw.name}`;
+    document.documentElement.style.setProperty("--accent", kw.color);
+    // 날짜별 문구: START_DATE 가 1일차, 하루에 한 줄씩
+    const rows = (DAILY[kw.id] || "").trim().split("\n").map(r => r.split(" ## ").map(x => x.replace(/ \| /g, "\n")));
+    let idx = dayNumber(ymd) - dayNumber(START_DATE);
+    if (idx < 0) idx = 0;                                  // 행사 전 → 1일차
+    if (idx > EVENT_DAYS - 1) idx = EVENT_DAYS - 1;        // 행사 후 → 마지막 날
+    const dayNo = idx + 1;
+    const [quote, tip] = rows[idx];
+    const [y, m, d] = ymd.split("-").map(Number);
+    const wd = "일월화수목금토"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+
+    app.innerHTML = `
+      <span class="corner tl">✿</span><span class="corner tr">✿</span>
+      <div class="eyebrow reveal"><span class="ray">╲</span> 오늘의 키워드 <span class="ray">╱</span></div>
+      <div class="cloud-wrap reveal d1">
+        <span class="sparkle l">✦</span><span class="sparkle r">✦</span>
+        <div class="cloud">${esc(kw.name)}</div>
+      </div>
+      <div class="scene reveal d2" id="scene">
+        <div class="fallback">
+          <span class="cl" style="left:30%;top:6%">☁</span><span class="cl" style="right:4%;top:48%">☁</span>
+          <div class="hill"></div>
+          <span class="sun">🌞</span>
+          <span class="flag">${esc(kw.flag)}</span>
+          <span class="hero">${kw.emoji}</span>
+        </div>
+      </div>
+      <div class="quote reveal d3">
+        <span class="q open">“</span>${fmtQuote(quote)}<span class="q close">”</span>
+      </div>
+      <div class="tip-head reveal d4"><span>💡 오늘의 실천 꿀팁</span></div>
+      <div class="tip reveal d4">
+        ${fmtTip(tip)}
+        <div class="date">${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · 내일은 새 문구가 나와요` : "마지막 날 · 함께해 주셔서 감사해요!"}</div>
+      </div>
+      <div class="actions reveal d4">
+        <button id="share">📤 카드 공유하기</button>
+      </div>
+      <div class="foot">${esc(CHURCH_NAME)} 🙌 내일도 룰렛 돌리러 오세요!</div>`;
+
+    // 그림 파일이 있으면 이모지 그림 대신 표시
+    if (kw.image) {
+      const img = new Image();
+      img.alt = kw.name;
+      img.onload = () => { const s = document.getElementById("scene"); s.innerHTML = ""; s.appendChild(img); };
+      img.src = kw.image;
+    }
+
+    document.getElementById("share").onclick = async () => {
+      const data = { title: `오늘의 키워드: ${kw.name}`, text: `${CHURCH_NAME} 오늘의 키워드는 '${kw.name}'!\n${tip.replace(/'/g, "")}`, url: location.href.split("&d=")[0] };
+      try {
+        if (navigator.share) await navigator.share(data);
+        else { await navigator.clipboard.writeText(`${data.text}\n${data.url}`); alert("링크가 복사되었어요!"); }
+      } catch (e) {}
+    };
+  }
+</script>
+</body>
+</html>
