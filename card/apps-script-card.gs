@@ -19,6 +19,8 @@
  *  - 기기ID는 폰마다 정해지는 익명 번호. 출석 체크 출입증이 그 폰에 저장돼 있으면 가려진 이름도 기록
  *  - "카드 요약" 탭: 총 조회 수, 참여 인원(기기 기준), 날짜별·키워드별 조회 수, 날짜별 참여 인원
  *
+ * [관리자 화면] card/admin.html 에서 현재 총 참여 인원(기기 기준)을 볼 수 있습니다.
+ *
  * ※ 코드를 고친 뒤에는 [배포] > [배포 관리] > 수정(연필) > 버전 "새 버전" 으로 다시 배포해야 반영됩니다.
  */
 
@@ -31,6 +33,7 @@ function doPost(e) {
   lock.waitLock(10000); // 동시에 들어온 요청을 순서대로 처리
   try {
     const d = JSON.parse(e.postData.contents);
+    if (d.action === "stats") return json(cardStats());
     if (d.action !== "card") return json({ ok: false, error: "unknown" });
     return json(logCardView(d));
   } catch (err) {
@@ -60,6 +63,16 @@ function logCardView(d) {
   }
   sheet.appendRow([date, time.slice(11), kw, device, uid, uid ? safeText(d.name) : "", key]);
   return { ok: true };
+}
+
+/** 관리자 화면용: 총 참여 인원(기기 기준) */
+function cardStats() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CARD_SHEET);
+  const devices = {};
+  if (sheet && sheet.getLastRow() > 1) {
+    sheet.getRange(2, 4, sheet.getLastRow() - 1, 1).getValues().forEach((r) => { if (r[0]) devices[r[0]] = true; });
+  }
+  return { ok: true, participants: Object.keys(devices).length };
 }
 
 /** 처음 한 번 편집기에서 실행: 탭 만들기 */

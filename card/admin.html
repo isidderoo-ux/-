@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>참여 인원</title>
+  <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet" />
+  <script src="data.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: #fcd34d; font-family: "Jua", system-ui, sans-serif; color: #3b2a1a;
+      display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; box-sizing: border-box;
+    }
+    .box { background: #fffbea; border: 10px solid #fde68a; box-shadow: 0 0 0 4px #fbbf24, 0 16px 36px rgba(146,64,14,.25);
+      border-radius: 34px; padding: 36px 48px; min-width: min(320px, 100%); box-sizing: border-box; }
+    .label { font-size: 26px; color: #92400e; }
+    .num { font-size: clamp(90px, 28vw, 200px); line-height: 1.1; color: #ea580c; }
+    .num small { font-size: .35em; color: #3b2a1a; }
+    .sub { font-family: system-ui, sans-serif; font-size: 13px; color: #a16207; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="label">현재 총 참여 인원</div>
+    <div class="num"><span id="n">–</span><small>명</small></div>
+    <div class="sub" id="sub">불러오는 중…</div>
+  </div>
+<script>
+  async function load() {
+    const sub = document.getElementById("sub");
+    if (!LOG_URL) { sub.textContent = "기록 주소(LOG_URL)가 설정되지 않았어요"; return; }
+    try {
+      const res = await fetch(LOG_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action: "stats" }) });
+      const out = await res.json();
+      if (!out.ok) throw new Error(out.error);
+      document.getElementById("n").textContent = out.participants.toLocaleString("ko-KR");
+      const t = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }).format(new Date());
+      sub.textContent = `${t} 기준 · 30초마다 자동 새로고침`;
+    } catch (e) {
+      sub.textContent = "불러오지 못했어요 (Apps Script 최신 코드로 재배포했는지 확인)";
+    }
+  }
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>
