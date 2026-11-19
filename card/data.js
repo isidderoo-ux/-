@@ -18,6 +18,9 @@ const CARD_URL = "https://attend.iasis-ministry.org/card/";
 const START_DATE = "2026-11-22";
 const EVENT_DAYS = 36;
 
+// 조회 기록을 보낼 구글 Apps Script 웹 앱 주소 (출석 체크와 같은 시트). 비우면 기록 안 함
+const LOG_URL = "https://script.google.com/macros/s/AKfycbzTlCC6Db0nvGEUzlFMcWYKgm6G4e2GSVJE6ariRTzHS4lwhRFUAEVvNc_d2ehsJrks1A/exec";
+
 const DAILY = {};
 
 const KEYWORDS = [
