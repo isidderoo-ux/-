@@ -152,6 +152,38 @@
   function fmtQuote(s) { return esc(s).replace(/\*(.+?)\*/g, '<span class="hl">$1</span>').replace(/\n/g, "<br>"); }
   function fmtTip(s) { return esc(s).replace(/'(.+?)'/g, "<mark>‘$1’</mark>").replace(/\n/g, "<br>"); }
 
+  // 기기마다 익명 ID 하나 (폰에 저장). 문구 배정과 조회 기록에 사용
+  function getDevice() {
+    let device = null;
+    try { device = localStorage.getItem("card.device"); } catch (e) {}
+    if (!/^D-[0-9A-Z]{8}$/.test(device || "")) {
+      const abc = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+      device = "D-" + Array.from(crypto.getRandomValues(new Uint8Array(8)), b => abc[b % abc.length]).join("");
+      try { localStorage.setItem("card.device", device); } catch (e) {}
+    }
+    return device;
+  }
+  function hash(str) { let h = 2166136261; for (const c of str) { h ^= c.codePointAt(0); h = Math.imul(h, 16777619); }
+    h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16; return h >>> 0; }
+
+  // 조회 기록: 기기마다 익명 ID 하나, 같은 날 같은 키워드는 한 번만 전송
+  function logView(kw) {
+    if (!LOG_URL || params.has("d") || !/^https:/.test(location.protocol)) return; // 미리보기·로컬 테스트는 제외
+    try {
+      const device = getDevice();
+      const sentKey = "card.sent." + ymd + "." + kw.id;
+      if (localStorage.getItem(sentKey)) return;
+      let pass = null;   // 출석 체크 출입증이 이 폰에 저장돼 있으면 이름(가림 처리)도 함께
+      try { pass = JSON.parse(localStorage.getItem("qrPass.v1")); } catch (e) {}
+      const now = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul", dateStyle: "short", timeStyle: "medium" }).format(new Date());
+      fetch(LOG_URL, {
+        method: "POST", mode: "no-cors", keepalive: true,
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "card", kw: kw.name, device, uid: pass && pass.uniqueId || "", name: pass && pass.maskedName || "", time: now }),
+      }).then(() => localStorage.setItem(sentKey, "1")).catch(() => {});
+    } catch (e) {}
+  }
+
   const app = document.getElementById("app");
   const params = new URLSearchParams(location.search);
   const kw = KEYWORDS.find(k => k.id === (params.get("k") || "").toLowerCase());
@@ -175,7 +207,20 @@
     if (idx < 0) idx = 0;                                  // 행사 전 → 1일차
     if (idx > EVENT_DAYS - 1) idx = EVENT_DAYS - 1;        // 행사 후 → 마지막 날
     const dayNo = idx + 1;
-    const [quote, tip] = rows[idx];
+    // 같은 키워드를 뽑아도 사람(기기)마다 다른 문구가 나오도록 섞기
+    //  · 말풍선과 꿀팁을 각각 따로 골라서 조합이 더 다양해짐 (55 × 55가지)
+    //  · 한 사람 기준으로는 매일 다음 문구로 넘어가서 행사 기간 동안 겹치지 않음
+    //  · 성탄·연말·마지막 날(32~36일차)은 모두에게 같은 시즌 문구
+    const FIXED_FROM = EVENT_DAYS - 5;
+    let quote, tip;
+    if (idx >= FIXED_FROM) {
+      [quote, tip] = rows[idx];
+    } else {
+      const pool = rows.filter((_, i) => i < FIXED_FROM || i >= EVENT_DAYS);
+      const dev = params.get("v") || getDevice();   // ?v=아무글자 로 다른 사람 화면 미리보기
+      quote = pool[(idx + hash(dev + kw.id + "q")) % pool.length][0];
+      tip = pool[(idx + hash(dev + kw.id + "t")) % pool.length][1];
+    }
     const [y, m, d] = ymd.split("-").map(Number);
     const wd = "일월화수목금토"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 
@@ -209,6 +254,8 @@
         <button id="share">📤 카드 공유하기</button>
       </div>
       <div class="foot">${esc(CHURCH_NAME)} 🙌 내일도 룰렛 돌리러 오세요!</div>`;
+
+    logView(kw);
 
     // 그림 파일이 있으면 이모지 그림 대신 표시
     if (kw.image) {
