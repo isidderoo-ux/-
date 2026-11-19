@@ -48,7 +48,7 @@
     const el = document.createElement("div");
     el.className = "item";
     el.style.setProperty("--c", k.color);
-    el.innerHTML = `<div class="em">${k.emoji}</div><h2>${k.name}</h2><div class="qr"></div><div class="say">QR을 찍고 카드를 받으세요!</div><small>${url}</small>`;
+    el.innerHTML = `<div class="em">${k.emoji}</div><h2>${k.name}</h2><div class="qr"></div><div class="say">QR을 찍고 카드를 받으세요!</div>`;
     grid.appendChild(el);
     new QRCode(el.querySelector(".qr"), { text: url, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M });
   });
