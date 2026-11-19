@@ -18,10 +18,6 @@
  * 7. 아래 VIEW_PASSWORD 를 원하는 비밀번호로 바꿉니다. 사이트의 [출석 명단] 탭에서 이 비밀번호를 넣으면
  *    시트를 공유하지 않아도 명단을 볼 수 있습니다. (비밀번호는 Apps Script 안에만 있고 사이트 소스에는 없습니다)
  *
- * 8. (키워드 카드) 카드 페이지(card/)에서 QR을 찍을 때마다 "카드조회" 탭에 기록되고,
- *    "카드 요약" 탭에 날짜별·키워드별 조회 수와 참여 인원이 자동으로 정리됩니다.
- *    같은 기기에서 같은 날 같은 키워드를 여러 번 열어도 1번만 셉니다.
- *
  * ※ 코드를 고친 뒤에는 [배포] > [배포 관리] > 수정(연필) > 버전 "새 버전" 으로 다시 배포해야 반영됩니다.
  */
 
@@ -39,7 +35,6 @@ function doPost(e) {
     const d = JSON.parse(e.postData.contents);
     if (d.action === "list") return json(listAttendance(d));
     if (d.action === "summary") return json(personSummary(d));
-    if (d.action === "card") return json(logCardView(d));
 
     const id = String(d.id || "");
     const time = String(d.time || "");
@@ -219,70 +214,6 @@ function rebuildPersonSheet() {
   sheet.getRange(1, 1, 1, header.length).setNumberFormat("@").setFontWeight("bold").setBackground("#eef2ff");
   sheet.getRange(1, 1, values.length, header.length).setValues(values);
   sheet.getRange(1, 3, values.length, header.length - 2).setHorizontalAlignment("center");
-}
-
-/* ===================== 키워드 카드 조회 기록 ===================== */
-const CARD_SHEET = "카드조회";
-const CARD_HEADERS = ["날짜", "시간", "키워드", "기기ID", "출입증ID", "이름", "중복확인키"];
-const CARD_KEYWORDS = ["용기", "믿음", "돌파", "확실", "사랑", "협력", "실력"];
-
-function logCardView(d) {
-  const kw = String(d.kw || "");
-  const device = String(d.device || "");
-  const time = String(d.time || "");
-  if (CARD_KEYWORDS.indexOf(kw) < 0 || !/^D-[0-9A-Z]{8}$/.test(device) ||
-      !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(time)) {
-    return { ok: false, error: "invalid" };
-  }
-  const uid = /^U-[0-9A-F]{6}$/.test(String(d.uid || "")) ? String(d.uid) : "";
-  const date = time.slice(0, 10);
-  const key = date + "|" + device + "|" + kw;
-
-  const sheet = getCardSheet();
-  // 같은 날 같은 기기·같은 키워드는 한 번만 기록
-  if (sheet.getLastRow() > 1) {
-    const found = sheet.getRange(2, 7, sheet.getLastRow() - 1, 1)
-      .createTextFinder(key).matchEntireCell(true).findNext();
-    if (found) return { ok: true, duplicate: true };
-  }
-  sheet.appendRow([date, time.slice(11), kw, device, uid, uid ? safeText(d.name) : "", key]);
-  return { ok: true };
-}
-
-function getCardSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(CARD_SHEET);
-  if (!sheet) {
-    sheet = ss.insertSheet(CARD_SHEET);
-    sheet.appendRow(CARD_HEADERS);
-    sheet.setFrozenRows(1);
-    sheet.getRange("A:B").setNumberFormat("@");
-    sheet.hideColumns(7);
-  }
-  setupCardViews();
-  return sheet;
-}
-
-/** "카드 요약" 탭: 전체 합계, 날짜별·키워드별 조회 수, 날짜별 참여 인원(기기 기준). 편집기에서 직접 실행해도 됩니다. */
-function setupCardViews() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (ss.getSheetByName("카드 요약")) return;
-  const src = "'" + CARD_SHEET + "'";
-  const v = ss.insertSheet("카드 요약");
-  v.getRange("A1").setFormula(
-    '="📊 키워드 카드  총 조회 "&COUNTA(' + src + '!A2:A)&"회 · 참여 인원 "&COUNTUNIQUE(' + src + '!D2:D)&"명(기기 기준)"'
-  ).setFontSize(15).setFontWeight("bold");
-  v.getRange("A3").setValue("날짜별 · 키워드별 조회 수").setFontWeight("bold");
-  v.getRange("A4").setFormula(
-    "=IFERROR(QUERY(" + src + "!A2:D,\"select A, count(D) where A is not null group by A pivot C order by A desc label A '날짜'\",0),\"아직 기록이 없습니다\")"
-  );
-  v.getRange("K3").setValue("날짜별 참여 인원").setFontWeight("bold");
-  v.getRange("K4").setFormula(
-    "=IFERROR(QUERY(UNIQUE(FILTER({" + src + "!A2:A," + src + "!D2:D}," + src + "!A2:A<>\"\")),\"select Col1, count(Col2) group by Col1 order by Col1 desc label Col1 '날짜', count(Col2) '참여 인원'\",0),\"\")"
-  );
-  v.getRange("A4:H4").setFontWeight("bold").setBackground("#fef3c7");
-  v.getRange("K4:L4").setFontWeight("bold").setBackground("#fef3c7");
-  v.setFrozenRows(4);
 }
 
 /** 수식으로 해석될 수 있는 값(=, +, -, @ 로 시작)을 일반 텍스트로 저장 */

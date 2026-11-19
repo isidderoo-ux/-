@@ -18,8 +18,9 @@ const CARD_URL = "https://attend.iasis-ministry.org/card/";
 const START_DATE = "2026-11-22";
 const EVENT_DAYS = 36;
 
-// 조회 기록을 보낼 구글 Apps Script 웹 앱 주소 (출석 체크와 같은 시트). 비우면 기록 안 함
-const LOG_URL = "https://script.google.com/macros/s/AKfycbzTlCC6Db0nvGEUzlFMcWYKgm6G4e2GSVJE6ariRTzHS4lwhRFUAEVvNc_d2ehsJrks1A/exec";
+// 조회 기록을 보낼 구글 Apps Script 웹 앱 주소 (출석 체크와는 별도의 "키워드 카드" 시트).
+// card/apps-script-card.gs 를 새 시트에 배포한 뒤 …/exec 주소를 넣으세요. 비워두면 기록하지 않습니다.
+const LOG_URL = "";
 
 const DAILY = {};
 
