@@ -102,7 +102,17 @@ function setupCardViews() {
   );
   v.getRange("A4:H4").setFontWeight("bold").setBackground("#fef3c7");
   v.getRange("K4:L4").setFontWeight("bold").setBackground("#fef3c7");
+  v.getRange("A5:A").setNumberFormat("yyyy-mm-dd");   // 날짜가 숫자(46345 등)로 보이지 않도록
+  v.getRange("K5:K").setNumberFormat("yyyy-mm-dd");
   v.setFrozenRows(4);
+}
+
+/** 이미 만들어진 "카드 요약" 탭의 날짜 표시 고치기 (편집기에서 한 번 실행) */
+function fixDateFormat() {
+  const v = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("카드 요약");
+  if (!v) return;
+  v.getRange("A5:A").setNumberFormat("yyyy-mm-dd");
+  v.getRange("K5:K").setNumberFormat("yyyy-mm-dd");
 }
 
 /** 수식으로 해석될 수 있는 값(=, +, -, @ 로 시작)을 일반 텍스트로 저장 */
