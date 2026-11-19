@@ -20,7 +20,7 @@ const EVENT_DAYS = 36;
 
 // 조회 기록을 보낼 구글 Apps Script 웹 앱 주소 (출석 체크와는 별도의 "키워드 카드" 시트).
 // card/apps-script-card.gs 를 새 시트에 배포한 뒤 …/exec 주소를 넣으세요. 비워두면 기록하지 않습니다.
-const LOG_URL = "";
+const LOG_URL = "https://script.google.com/macros/s/AKfycbxTBYv_GPWc301gYbsxv4iME9eF4HCJ6ClspRK2vHRV1TYqp6Fg7T1Uuburv0HB5PIfeA/exec";
 
 const DAILY = {};
 
