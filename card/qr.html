@@ -8,24 +8,40 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="data.js"></script>
   <style>
+    @page { size: A4; margin: 10mm; }
     body { margin: 0; background: #f1f5f9; font-family: "Jua", system-ui, sans-serif; color: #1f2937; }
     .bar { padding: 16px; text-align: center; }
     .bar p { margin: 4px 0; font-family: system-ui, sans-serif; font-size: 14px; color: #475569; }
-    .bar button { font-family: inherit; font-size: 18px; border: 0; border-radius: 999px; padding: 10px 24px; background: #f97316; color: #fff; cursor: pointer; margin-top: 8px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; padding: 16px; max-width: 1000px; margin: 0 auto; }
-    .item { background: #fff; border-radius: 18px; padding: 18px; text-align: center; border: 6px solid var(--c); break-inside: avoid; page-break-inside: avoid; }
-    .item h2 { margin: 0 0 4px; font-size: 44px; color: var(--c); }
-    .item .em { font-size: 28px; }
-    .qr { width: 180px; height: 180px; margin: 10px auto; }
-    .qr img, .qr canvas { width: 100% !important; height: 100% !important; }
-    .item small { display: block; font-family: system-ui, sans-serif; font-size: 10px; color: #94a3b8; word-break: break-all; }
-    .item .say { font-size: 16px; margin-top: 4px; }
+    .bar button { font-family: inherit; font-size: 17px; border: 0; border-radius: 999px; padding: 9px 20px; background: #e2e8f0; color: #334155; cursor: pointer; margin: 8px 3px 0; }
+    .bar button.on, .bar button.print { background: #f97316; color: #fff; }
+
+    /* 화면에서는 A4 종이 모양으로 미리보기 */
+    .page {
+      width: 190mm; height: 277mm; margin: 0 auto 16px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12);
+      display: grid; gap: 8mm; padding: 0; box-sizing: border-box;
+    }
+    .page.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    .page.n1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+    .item {
+      border-radius: 6mm; border: 2.5mm solid var(--c); box-sizing: border-box; overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    }
+    .item .em { font-size: 9mm; line-height: 1; }
+    .item h2 { margin: 2mm 0 3mm; font-size: 16mm; line-height: 1; color: var(--c); }
+    .qr { width: 62mm; height: 62mm; }
+    .qr img, .qr canvas { width: 100% !important; height: 100% !important; display: block; }
+    .item .say { font-size: 5mm; margin-top: 4mm; }
+    .n1 .item { border-width: 4mm; border-radius: 10mm; }
+    .n1 .em { font-size: 22mm; } .n1 h2 { font-size: 40mm; margin: 4mm 0 8mm; }
+    .n1 .qr { width: 130mm; height: 130mm; } .n1 .say { font-size: 10mm; margin-top: 8mm; }
+    .wrapper { overflow-x: auto; padding: 0 8px 16px; }
+
     @media print {
       body { background: #fff; }
       .bar { display: none; }
-      .grid { grid-template-columns: repeat(2, 1fr); gap: 10mm; padding: 0; }
-      .item { padding: 8mm; }
-      .qr { width: 55mm; height: 55mm; }
+      .wrapper { padding: 0; overflow: visible; }
+      .page { margin: 0; box-shadow: none; break-after: page; page-break-after: always; }
+      .page:last-child { break-after: auto; page-break-after: auto; }
       * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
@@ -33,25 +49,32 @@
 <body>
   <div class="bar">
     <h1 style="margin:0">키워드 QR 인쇄용</h1>
-    <p>이 QR 주소는 고정이에요. 한 번 출력해두면 매일 써도 꿀팁만 날짜에 맞게 바뀝니다.</p>
-    <p id="base"></p>
-    <button onclick="print()">🖨️ 인쇄하기</button>
+    <p>QR 주소는 고정이에요. 한 번 출력해두면 행사 기간 내내 쓸 수 있어요. (A4 기준)</p>
+    <button data-n="4" class="mode on">한 장에 4개</button>
+    <button data-n="1" class="mode">한 장에 1개 (크게)</button>
+    <button class="print" onclick="print()">🖨️ 인쇄하기</button>
   </div>
-  <div class="grid" id="grid"></div>
+  <div class="wrapper" id="pages"></div>
 <script>
-  // 카드 페이지 주소 (이 파일과 같은 폴더의 index.html)
-  const base = CARD_URL;
-  document.getElementById("base").textContent = "카드 주소: " + base + "?k=…";
-  const grid = document.getElementById("grid");
-  KEYWORDS.forEach(k => {
-    const url = `${base}?k=${k.id}`;
-    const el = document.createElement("div");
-    el.className = "item";
-    el.style.setProperty("--c", k.color);
-    el.innerHTML = `<div class="em">${k.emoji}</div><h2>${k.name}</h2><div class="qr"></div><div class="say">QR을 찍고 카드를 받으세요!</div>`;
-    grid.appendChild(el);
-    new QRCode(el.querySelector(".qr"), { text: url, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M });
+  const box = document.getElementById("pages");
+  function render(per) {
+    box.innerHTML = "";
+    let page;
+    KEYWORDS.forEach((k, i) => {
+      if (i % per === 0) { page = document.createElement("div"); page.className = "page n" + per; box.appendChild(page); }
+      const el = document.createElement("div");
+      el.className = "item";
+      el.style.setProperty("--c", k.color);
+      el.innerHTML = `<div class="em">${k.emoji}</div><h2>${k.name}</h2><div class="qr"></div><div class="say">QR을 찍고 카드를 받으세요!</div>`;
+      page.appendChild(el);
+      new QRCode(el.querySelector(".qr"), { text: `${CARD_URL}?k=${k.id}`, width: 600, height: 600, correctLevel: QRCode.CorrectLevel.M });
+    });
+  }
+  document.querySelectorAll(".mode").forEach(b => b.onclick = () => {
+    document.querySelectorAll(".mode").forEach(x => x.classList.toggle("on", x === b));
+    render(+b.dataset.n);
   });
+  render(4);
 </script>
 </body>
 </html>
