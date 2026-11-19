@@ -18,7 +18,7 @@
     .label { font-size: 26px; color: #92400e; }
     .num { font-size: clamp(90px, 28vw, 200px); line-height: 1.1; color: #ea580c; }
     .num small { font-size: .35em; color: #3b2a1a; }
-    .sub { font-family: system-ui, sans-serif; font-size: 13px; color: #a16207; margin-top: 6px; }
+    .sub { word-break: keep-all; font-family: system-ui, sans-serif; font-size: 13px; color: #a16207; margin-top: 6px; }
   </style>
 </head>
 <body>
@@ -37,7 +37,7 @@
       if (!out.ok) throw new Error(out.error);
       document.getElementById("n").textContent = out.participants.toLocaleString("ko-KR");
       const t = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit" }).format(new Date());
-      sub.textContent = `${t} 기준 · 30초마다 자동 새로고침`;
+      sub.textContent = `${t} 기준 · 30초마다 갱신`;
     } catch (e) {
       sub.textContent = "불러오지 못했어요 (Apps Script 최신 코드로 재배포했는지 확인)";
     }
