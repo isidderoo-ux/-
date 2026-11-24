@@ -215,24 +215,48 @@
     if (idx < 0) idx = 0;                                  // 행사 전 → 1일차
     if (idx > EVENT_DAYS - 1) idx = EVENT_DAYS - 1;        // 행사 후 → 마지막 날
     const dayNo = idx + 1;
-    // 같은 키워드를 뽑아도 사람(기기)마다 다른 문구가 나오도록 섞기
-    //  · 말풍선과 꿀팁을 각각 따로 골라서 조합이 더 다양해짐 (55 × 55가지)
-    //  · 한 사람 기준으로는 매일 다음 문구로 넘어가서 행사 기간 동안 겹치지 않음
-    //  · 성탄·연말·마지막 날(32~36일차)은 모두에게 같은 시즌 문구
+    // 꿀팁 고르기
+    //  · 사람(폰)마다 키워드별로 꿀팁 순서를 따로 섞어 두고, 카드를 열 때마다 다음 꿀팁으로 넘어감
+    //    → 같은 사람이 같은 키워드를 여러 번 뽑아도 매번 다른 꿀팁 (55개를 다 볼 때까지 안 겹침)
+    //  · 같은 창에서 새로고침하면 방금 본 꿀팁 그대로
+    //  · 성탄·연말·마지막 날(32~36일차)은 그날 처음 열 때 모두에게 같은 시즌 꿀팁
     const FIXED_FROM = EVENT_DAYS - 5;
+    const pool = rows.filter((_, i) => i < FIXED_FROM || i >= EVENT_DAYS);
+    const preview = params.has("d") || params.has("v");   // 미리보기 주소는 순서를 넘기지 않음
+    const dev = params.get("v") || getDevice();
+    const order = pool.map((_, i) => i);                  // 기기·키워드별로 고정된 섞인 순서
+    let seed = hash(dev + kw.id);
+    for (let i = order.length - 1; i > 0; i--) {
+      seed = hash(seed + ":" + i);
+      const j = seed % (i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    const store = {
+      get(k, ss) { try { return (ss ? sessionStorage : localStorage).getItem(k); } catch (e) { return null; } },
+      set(k, v, ss) { try { (ss ? sessionStorage : localStorage).setItem(k, v); } catch (e) {} },
+    };
     let quote, tip;
-    if (idx >= FIXED_FROM) {
+    const curKey = "card.cur." + kw.id + "." + ymd;
+    const seasonKey = "card.season." + kw.id + "." + ymd;
+    if (preview) {
+      [quote, tip] = idx >= FIXED_FROM ? rows[idx] : pool[order[idx % order.length]];
+    } else if (store.get(curKey, true)) {                   // 새로고침 → 같은 꿀팁
+      const c = store.get(curKey, true);
+      [quote, tip] = c === "season" ? rows[idx] : pool[order[(+c) % order.length]];
+    } else if (idx >= FIXED_FROM && !store.get(seasonKey)) { // 시즌 날 첫 카드
       [quote, tip] = rows[idx];
+      store.set(seasonKey, "1");
+      store.set(curKey, "season", true);
     } else {
-      const pool = rows.filter((_, i) => i < FIXED_FROM || i >= EVENT_DAYS);
-      const dev = params.get("v") || getDevice();   // ?v=아무글자 로 다른 사람 화면 미리보기
-      quote = pool[(idx + hash(dev + kw.id + "q")) % pool.length][0];
-      tip = pool[(idx + hash(dev + kw.id + "t")) % pool.length][1];
+      const n = parseInt(store.get("card.n." + kw.id) || "0", 10) || 0;
+      [quote, tip] = pool[order[n % order.length]];
+      store.set("card.n." + kw.id, String(n + 1));
+      store.set(curKey, String(n), true);
     }
     const [y, m, d] = ymd.split("-").map(Number);
     const wd = "일월화수목금토"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 
-    const dateLine = `${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · 내일은 새 꿀팁이 나와요` : "마지막 날 · 함께해 주셔서 감사해요!"}`;
+    const dateLine = `${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · QR을 찍을 때마다 새 꿀팁이 나와요` : "마지막 날 · 함께해 주셔서 감사해요!"}`;
     const tail = `
       <div class="actions reveal d4">
         <button id="share">📤 카드 공유하기</button>

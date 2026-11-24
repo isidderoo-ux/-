@@ -23,7 +23,7 @@
   </style>
 </head>
 <body>
-  <header><h1>문구 미리보기</h1><span id="tabs"></span><small style="flex-basis:100%;color:#64748b">실제 카드는 사람(폰)마다 꿀팁이 섞여서 나오고, 한 사람 기준으로는 행사 기간 동안 겹치지 않아요. 32~36일차(12/23~27)는 모두에게 같은 시즌 문구가 나와요.</small></header>
+  <header><h1>문구 미리보기</h1><span id="tabs"></span><small style="flex-basis:100%;color:#64748b">실제 카드는 사람(폰)마다 꿀팁 순서가 따로 섞이고, QR을 찍을 때마다 다음 꿀팁이 나와요(같은 키워드 55번까지 안 겹침). 32~36일차(12/23~27)는 그날 첫 카드에 시즌 꿀팁이 나와요.</small></header>
   <table><thead><tr><th>일차 / 날짜</th><th class="qcol">말풍선 문구</th><th>실천 꿀팁</th></tr></thead><tbody id="rows"></tbody></table>
 <script>
   const dn = s => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
