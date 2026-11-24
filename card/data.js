@@ -24,12 +24,13 @@ const LOG_URL = "https://script.google.com/macros/s/AKfycbxTBYv_GPWc301gYbsxv4iM
 
 const DAILY = {};
 
+// card: 완성된 카드 그림(키워드·캐릭터·말씀이 들어간 이미지). 있으면 그 그림 + 아래에 오늘의 실천 꿀팁을 보여줍니다.
+//       그림이 없으면 기존 방식(구름 키워드 + 이모지 그림 + 날짜별 말풍선 문구)으로 보여줍니다.
 const KEYWORDS = [
-  { id: "courage", name: "용기", flag: "승리", emoji: "🦸", color: "#f97316", image: "img/courage.jpg" },
-  { id: "faith", name: "믿음", flag: "아멘", emoji: "🙏", color: "#6366f1", image: "img/faith.jpg" },
-  { id: "breakthrough", name: "돌파", flag: "전진", emoji: "🚀", color: "#ef4444", image: "img/breakthrough.jpg" },
-  { id: "certainty", name: "확실", flag: "확신", emoji: "💯", color: "#0ea5e9", image: "img/certainty.jpg" },
-  { id: "love", name: "사랑", flag: "샬롬", emoji: "💖", color: "#ec4899", image: "img/love.jpg" },
-  { id: "together", name: "협력", flag: "하나", emoji: "🤝", color: "#22c55e", image: "img/together.jpg" },
-  { id: "skill", name: "실력", flag: "최고", emoji: "🏅", color: "#a855f7", image: "img/skill.jpg" },
+  { id: "courage", name: "용기", flag: "승리", emoji: "🦸", color: "#f97316", card: "img/card-courage.jpg" },
+  { id: "faith", name: "믿음", flag: "아멘", emoji: "🙏", color: "#6366f1", card: "img/card-faith.jpg" },
+  { id: "breakthrough", name: "돌파", flag: "전진", emoji: "🚀", color: "#ef4444", card: "img/card-breakthrough.jpg" },
+  { id: "certainty", name: "확실", flag: "확신", emoji: "💯", color: "#0ea5e9", card: "img/card-certainty.jpg" },
+  { id: "victory", name: "승리", flag: "승리", emoji: "🏆", color: "#eab308", card: "img/card-victory.jpg" },
+  { id: "skill", name: "실력", flag: "최고", emoji: "🏅", color: "#a855f7", card: "img/card-skill.jpg" },
 ];

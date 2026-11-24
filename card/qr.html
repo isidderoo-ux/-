@@ -20,8 +20,10 @@
       width: 190mm; height: 277mm; margin: 0 auto 16px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12);
       display: grid; gap: 8mm; padding: 0; box-sizing: border-box;
     }
-    .page.n4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-    .page.n1 { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+    .page.n6 { grid-template-columns: 1fr 1fr; grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 6mm; }
+    .n6 .em { font-size: 7mm; } .n6 h2 { font-size: 13mm; margin: 1.5mm 0 2mm; }
+    .n6 .qr { width: 46mm; height: 46mm; } .n6 .say { font-size: 4.2mm; margin-top: 2.5mm; }
+    .page.n1 { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr); }
     .item {
       border-radius: 6mm; border: 2.5mm solid var(--c); box-sizing: border-box; overflow: hidden;
       display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
@@ -50,7 +52,7 @@
   <div class="bar">
     <h1 style="margin:0">키워드 QR 인쇄용</h1>
     <p>QR 주소는 고정이에요. 한 번 출력해두면 행사 기간 내내 쓸 수 있어요. (A4 기준)</p>
-    <button data-n="4" class="mode on">한 장에 4개</button>
+    <button data-n="6" class="mode on">한 장에 6개</button>
     <button data-n="1" class="mode">한 장에 1개 (크게)</button>
     <button class="print" onclick="print()">🖨️ 인쇄하기</button>
   </div>
@@ -74,7 +76,7 @@
     document.querySelectorAll(".mode").forEach(x => x.classList.toggle("on", x === b));
     render(+b.dataset.n);
   });
-  render(4);
+  render(6);
 </script>
 </body>
 </html>
