@@ -26,7 +26,7 @@
 
 const CARD_SHEET = "카드조회";
 const CARD_HEADERS = ["날짜", "시간", "키워드", "기기ID", "출입증ID", "이름", "중복확인키"];
-const CARD_KEYWORDS = ["용기", "믿음", "돌파", "확실", "사랑", "협력", "실력"];
+const CARD_KEYWORDS = ["용기", "믿음", "돌파", "확실", "승리", "실력", "사랑", "협력"];
 
 function doPost(e) {
   const lock = LockService.getScriptLock();

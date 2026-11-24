@@ -17,8 +17,7 @@
   <script src="daily/faith.js"></script>
   <script src="daily/breakthrough.js"></script>
   <script src="daily/certainty.js"></script>
-  <script src="daily/love.js"></script>
-  <script src="daily/together.js"></script>
+  <script src="daily/victory.js"></script>
   <script src="daily/skill.js"></script>
   <style>
     :root { --accent: #f97316; --frame: #fcd34d; --cream: #fffbea; --ink: #3b2a1a; --tip: #3f6212; }
@@ -120,6 +119,15 @@
       font-family: inherit; font-size: 16px; border: 0; border-radius: 999px; padding: 10px 18px;
       background: #fff; color: var(--ink); box-shadow: 0 3px 0 rgba(0,0,0,.12); cursor: pointer;
     }
+
+    /* 완성 카드 그림 모드 */
+    .img-card img { display: block; width: 100%; height: auto; border-radius: 22px; box-shadow: 0 14px 30px rgba(146, 64, 14, .28); }
+    .tipcard {
+      position: relative; margin-top: 26px; background: #fffbea; border: 8px solid #fedc50; border-radius: 26px;
+      box-shadow: 0 10px 24px rgba(146, 64, 14, .2); padding: 30px 16px 16px;
+    }
+    .tipcard .tip-head { position: absolute; left: 0; right: 0; top: -20px; margin: 0; }
+    .tipcard .tip { margin: 0; border: 0; background: transparent; padding: 0; }
 
     /* 등장 애니메이션 */
     .reveal { animation: pop .6s cubic-bezier(.2,1.4,.4,1) both; }
@@ -224,7 +232,22 @@
     const [y, m, d] = ymd.split("-").map(Number);
     const wd = "일월화수목금토"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 
-    app.innerHTML = `
+    const dateLine = `${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · 내일은 새 꿀팁이 나와요` : "마지막 날 · 함께해 주셔서 감사해요!"}`;
+    const tail = `
+      <div class="actions reveal d4">
+        <button id="share">📤 카드 공유하기</button>
+      </div>
+      <div class="foot">${esc(CHURCH_NAME)} 🙌 내일도 룰렛 돌리러 오세요!</div>`;
+
+    if (kw.card) {
+      // 완성 카드 그림 + 오늘의 실천 꿀팁
+      app.innerHTML = `
+      <div class="img-card reveal"><img src="${kw.card}" alt="오늘의 키워드 ${esc(kw.name)}"></div>
+      <section class="tipcard reveal d2">
+        <div class="tip-head"><span>💡 오늘의 실천 꿀팁</span></div>
+        <div class="tip">${fmtTip(tip)}<div class="date">${dateLine}</div></div>
+      </section>` + tail;
+    } else app.innerHTML = `
       <section class="card">
       ${["tl", "tr", "bl", "br"].map(c => `<svg class="corner ${c}" viewBox="0 0 40 40"><g fill="#fb923c"><circle cx="20" cy="10" r="9"/><circle cx="20" cy="30" r="9"/><circle cx="10" cy="20" r="9"/><circle cx="30" cy="20" r="9"/></g><circle cx="20" cy="20" r="6" fill="#fed7aa"/></svg>`).join("")}
       <div class="eyebrow reveal"><span class="ray">╲</span> 오늘의 키워드 <span class="ray">╱</span></div>
@@ -247,18 +270,14 @@
       <div class="tip-head reveal d4"><span>💡 오늘의 실천 꿀팁</span></div>
       <div class="tip reveal d4">
         ${fmtTip(tip)}
-        <div class="date">${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · 내일은 새 문구가 나와요` : "마지막 날 · 함께해 주셔서 감사해요!"}</div>
+        <div class="date">${dateLine}</div>
       </div>
-      </section>
-      <div class="actions reveal d4">
-        <button id="share">📤 카드 공유하기</button>
-      </div>
-      <div class="foot">${esc(CHURCH_NAME)} 🙌 내일도 룰렛 돌리러 오세요!</div>`;
+      </section>` + tail;
 
     logView(kw);
 
     // 그림 파일이 있으면 이모지 그림 대신 표시
-    if (kw.image) {
+    if (!kw.card && kw.image) {
       const img = new Image();
       img.alt = kw.name;
       img.onload = () => { const s = document.getElementById("scene"); s.innerHTML = ""; s.appendChild(img); };
