@@ -32,5 +32,6 @@ const KEYWORDS = [
   { id: "breakthrough", name: "돌파", flag: "전진", emoji: "🚀", color: "#ef4444", card: "img/card-breakthrough.jpg" },
   { id: "certainty", name: "확실", flag: "확신", emoji: "💯", color: "#0ea5e9", card: "img/card-certainty.jpg" },
   { id: "victory", name: "승리", flag: "승리", emoji: "🏆", color: "#eab308", card: "img/card-victory.jpg" },
+  { id: "together", name: "협력", flag: "하나", emoji: "🤝", color: "#22c55e", card: "img/card-together.jpg" },
   { id: "skill", name: "실력", flag: "최고", emoji: "🏅", color: "#a855f7", card: "img/card-skill.jpg" },
 ];
