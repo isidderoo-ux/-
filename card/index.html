@@ -12,14 +12,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
-  <script src="data.js?v=20261125b"></script>
-  <script src="daily/courage.js?v=20261125b"></script>
-  <script src="daily/faith.js?v=20261125b"></script>
-  <script src="daily/breakthrough.js?v=20261125b"></script>
-  <script src="daily/certainty.js?v=20261125b"></script>
-  <script src="daily/victory.js?v=20261125b"></script>
-  <script src="daily/together.js?v=20261125b"></script>
-  <script src="daily/skill.js?v=20261125b"></script>
+  <script src="data.js?v=20261125c"></script>
+  <script src="daily/courage.js?v=20261125c"></script>
+  <script src="daily/faith.js?v=20261125c"></script>
+  <script src="daily/breakthrough.js?v=20261125c"></script>
+  <script src="daily/certainty.js?v=20261125c"></script>
+  <script src="daily/victory.js?v=20261125c"></script>
+  <script src="daily/together.js?v=20261125c"></script>
+  <script src="daily/skill.js?v=20261125c"></script>
   <style>
     :root { --accent: #f97316; --frame: #fcd34d; --cream: #fffbea; --ink: #3b2a1a; --tip: #3f6212; }
     * { box-sizing: border-box; }
@@ -268,10 +268,10 @@
       // 완성 카드 그림 + 오늘의 실천 꿀팁
       app.innerHTML = `
       <div class="img-card reveal"><img src="${kw.card}" alt="오늘의 키워드 ${esc(kw.name)}"></div>
-      <section class="tipcard reveal d2">
+      ${SHOW_TIPS ? `<section class="tipcard reveal d2">
         <div class="tip-head"><span>💡 오늘의 실천 꿀팁</span></div>
         <div class="tip">${fmtTip(tip)}<div class="date">${dateLine}</div></div>
-      </section>` + tail;
+      </section>` : ""}` + tail;
     } else app.innerHTML = `
       <section class="card">
       ${["tl", "tr", "bl", "br"].map(c => `<svg class="corner ${c}" viewBox="0 0 40 40"><g fill="#fb923c"><circle cx="20" cy="10" r="9"/><circle cx="20" cy="30" r="9"/><circle cx="10" cy="20" r="9"/><circle cx="30" cy="20" r="9"/></g><circle cx="20" cy="20" r="6" fill="#fed7aa"/></svg>`).join("")}
@@ -310,7 +310,7 @@
     }
 
     document.getElementById("share").onclick = async () => {
-      const data = { title: `오늘의 키워드: ${kw.name}`, text: `오늘의 키워드는 '${kw.name}'!\n${tip.replace(/'/g, "")}`, url: location.href.split("&d=")[0] };
+      const data = { title: `오늘의 키워드: ${kw.name}`, text: `오늘의 키워드는 '${kw.name}'!` + (SHOW_TIPS ? `\n${tip.replace(/'/g, "")}` : ""), url: location.href.split("&d=")[0] };
       try {
         if (navigator.share) await navigator.share(data);
         else { await navigator.clipboard.writeText(`${data.text}\n${data.url}`); alert("링크가 복사되었어요!"); }
