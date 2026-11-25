@@ -211,7 +211,7 @@
     document.title = `오늘의 키워드 · ${kw.name}`;
     document.documentElement.style.setProperty("--accent", kw.color);
     // 날짜별 문구: START_DATE 가 1일차, 하루에 한 줄씩
-    const rows = (DAILY[kw.id] || "").trim().split("\n").map(r => r.split(" ## ").map(x => x.replace(/ \| /g, "\n")));
+    const rows = (DAILY[kw.id] || "").trim().split("\n").map(r => (r.includes(" ## ") ? r.split(" ## ") : ["", r]).map(x => x.replace(/ \| /g, "\n")));   // 꿀팁만 있는 줄은 말풍선 비움
     let idx = dayNumber(ymd) - dayNumber(START_DATE);
     if (idx < 0) idx = 0;                                  // 행사 전 → 1일차
     if (idx > EVENT_DAYS - 1) idx = EVENT_DAYS - 1;        // 행사 후 → 마지막 날
@@ -310,7 +310,7 @@
     }
 
     document.getElementById("share").onclick = async () => {
-      const data = { title: `오늘의 키워드: ${kw.name}`, text: `${CHURCH_NAME} 오늘의 키워드는 '${kw.name}'!\n${tip.replace(/'/g, "")}`, url: location.href.split("&d=")[0] };
+      const data = { title: `오늘의 키워드: ${kw.name}`, text: `오늘의 키워드는 '${kw.name}'!\n${tip.replace(/'/g, "")}`, url: location.href.split("&d=")[0] };
       try {
         if (navigator.share) await navigator.share(data);
         else { await navigator.clipboard.writeText(`${data.text}\n${data.url}`); alert("링크가 복사되었어요!"); }
