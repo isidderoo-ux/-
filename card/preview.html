@@ -35,7 +35,7 @@
     const hasCard = KEYWORDS.find(k => k.id === id).card;  // 완성 카드 그림이 있으면 말풍선 문구는 안 쓰임
     document.body.classList.toggle("nocol", !!hasCard);
     document.getElementById("rows").innerHTML = rows.map((r, i) => {
-      const [q, t] = r.split(" ## ").map(x => esc(x).replace(/ \| /g, "<br>"));
+      const [q, t] = (r.includes(" ## ") ? r.split(" ## ") : ["", r]).map(x => esc(x).replace(/ \| /g, "<br>"));
       const date = new Date((dn(START_DATE) + i) * 86400000).toISOString().slice(0, 10);
       if (i >= EVENT_DAYS) return `<tr style="color:#94a3b8"><th>예비 ${i + 1 - EVENT_DAYS}</th><td class="qcol">${q}</td><td>${t}</td></tr>`;
       return `<tr class="${date === today ? "today" : ""}"><th>${i + 1}일차<br>${date.slice(5).replace("-", "/")}<br><a href="./?k=${id}&d=${date}" target="_blank">카드 보기</a></th><td class="qcol">${q}</td><td>${t}</td></tr>`;
