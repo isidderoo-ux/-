@@ -18,6 +18,7 @@
   <script src="daily/breakthrough.js"></script>
   <script src="daily/certainty.js"></script>
   <script src="daily/victory.js"></script>
+  <script src="daily/together.js"></script>
   <script src="daily/skill.js"></script>
   <style>
     :root { --accent: #f97316; --frame: #fcd34d; --cream: #fffbea; --ink: #3b2a1a; --tip: #3f6212; }
@@ -256,7 +257,7 @@
     const [y, m, d] = ymd.split("-").map(Number);
     const wd = "일월화수목금토"[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 
-    const dateLine = `${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · QR을 찍을 때마다 새 꿀팁이 나와요` : "마지막 날 · 함께해 주셔서 감사해요!"}`;
+    const dateLine = `${m}월 ${d}일 (${wd}) · ${dayNo < EVENT_DAYS ? `${dayNo}일차 · 찍을 때마다 새 꿀팁` : "마지막 날 · 함께해 주셔서 감사해요!"}`;
     const tail = `
       <div class="actions reveal d4">
         <button id="share">📤 카드 공유하기</button>
