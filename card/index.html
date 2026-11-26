@@ -13,14 +13,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap" rel="stylesheet" />
-  <script src="data.js?v=20261126a"></script>
-  <script src="daily/courage.js?v=20261126a"></script>
-  <script src="daily/faith.js?v=20261126a"></script>
-  <script src="daily/breakthrough.js?v=20261126a"></script>
-  <script src="daily/certainty.js?v=20261126a"></script>
-  <script src="daily/victory.js?v=20261126a"></script>
-  <script src="daily/together.js?v=20261126a"></script>
-  <script src="daily/skill.js?v=20261126a"></script>
+  <script src="data.js?v=20261126b"></script>
+  <script src="daily/courage.js?v=20261126b"></script>
+  <script src="daily/faith.js?v=20261126b"></script>
+  <script src="daily/breakthrough.js?v=20261126b"></script>
+  <script src="daily/certainty.js?v=20261126b"></script>
+  <script src="daily/victory.js?v=20261126b"></script>
+  <script src="daily/together.js?v=20261126b"></script>
+  <script src="daily/skill.js?v=20261126b"></script>
   <style>
     :root { --accent: #f97316; --frame: #fcd34d; --cream: #fffbea; --ink: #3b2a1a; --tip: #3f6212; }
     * { box-sizing: border-box; }
@@ -129,7 +129,13 @@
       box-shadow: 0 10px 24px rgba(146, 64, 14, .2); padding: 30px 16px 16px;
     }
     .tipcard .tip-head { position: absolute; left: 0; right: 0; top: -20px; margin: 0; }
-    .tipcard .tip { margin: 0; border: 0; background: transparent; padding: 0; }
+    .tipcard .tip { margin: 0; border: 0; background: transparent; padding: 0 6px; text-wrap: balance; }
+    .tip-main { font-size: 19px; line-height: 1.55; color: #365314; text-wrap: balance; word-break: keep-all; }
+    .tip-sub {
+      margin-top: 10px; padding-top: 10px; border-top: 2px dashed #d9f99d;
+      font-family: "Gowun Dodum", sans-serif; font-size: 15.5px; line-height: 1.6; color: #4d7c0f;
+      text-wrap: balance; word-break: keep-all;
+    }
 
     /* 등장 애니메이션 */
     .reveal { animation: pop .6s cubic-bezier(.2,1.4,.4,1) both; }
@@ -271,7 +277,11 @@
       <div class="img-card reveal"><img src="${kw.card}" alt="오늘의 키워드 ${esc(kw.name)}"></div>
       ${SHOW_TIPS ? `<section class="tipcard reveal d2">
         <div class="tip-head"><span>💡 오늘의 실천 꿀팁</span></div>
-        <div class="tip">${fmtTip(tip)}<div class="date">${dateLine}</div></div>
+        <div class="tip">${(() => {
+          // 첫 문장은 크게, 나머지는 작게. 줄 길이는 균형 있게(text-wrap: balance)
+          const [main, ...rest] = tip.split("\n");
+          return `<div class="tip-main">${fmtTip(main)}</div>` + (rest.length ? `<div class="tip-sub">${fmtTip(rest.join(" "))}</div>` : "");
+        })()}</div>
       </section>` : ""}` + tail;
     } else app.innerHTML = `
       <section class="card">
