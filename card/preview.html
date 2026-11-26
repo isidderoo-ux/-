@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex" />
   <title>문구 미리보기</title>
-  <script src="data.js?v=20261125c"></script>
-  <script src="daily/courage.js?v=20261125c"></script><script src="daily/faith.js?v=20261125c"></script><script src="daily/breakthrough.js?v=20261125c"></script>
-  <script src="daily/certainty.js?v=20261125c"></script><script src="daily/victory.js?v=20261125c"></script><script src="daily/together.js?v=20261125c"></script><script src="daily/skill.js?v=20261125c"></script>
+  <script src="data.js?v=20261126a"></script>
+  <script src="daily/courage.js?v=20261126a"></script><script src="daily/faith.js?v=20261126a"></script><script src="daily/breakthrough.js?v=20261126a"></script>
+  <script src="daily/certainty.js?v=20261126a"></script><script src="daily/victory.js?v=20261126a"></script><script src="daily/together.js?v=20261126a"></script><script src="daily/skill.js?v=20261126a"></script>
   <style>
     body { margin: 0; font-family: system-ui, sans-serif; background: #f8fafc; color: #1f2937; }
     header { position: sticky; top: 0; background: #fff; padding: 12px 16px; border-bottom: 1px solid #e2e8f0; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -23,8 +23,8 @@
   </style>
 </head>
 <body>
-  <header><h1>문구 미리보기</h1><span id="tabs"></span><small style="flex-basis:100%;color:#64748b">실제 카드는 사람(폰)마다 꿀팁 순서가 따로 섞이고, QR을 찍을 때마다 다음 꿀팁이 나와요(같은 키워드 55번까지 안 겹침). 32~36일차(12/23~27)는 그날 첫 카드에 시즌 꿀팁이 나와요.</small></header>
-  <table><thead><tr><th>일차 / 날짜</th><th class="qcol">말풍선 문구</th><th>실천 꿀팁</th></tr></thead><tbody id="rows"></tbody></table>
+  <header><h1>문구 미리보기</h1><span id="tabs"></span><small style="flex-basis:100%;color:#64748b">실제 카드는 사람(폰)마다 순서가 따로 섞이고, QR을 찍을 때마다 다음 메시지가 나와요. 같은 키워드에서 메시지를 다 볼 때까지 겹치지 않아요.</small></header>
+  <table><thead><tr><th>번호</th><th class="qcol">말풍선 문구</th><th>실천 꿀팁</th></tr></thead><tbody id="rows"></tbody></table>
 <script>
   const dn = s => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
@@ -36,9 +36,7 @@
     document.body.classList.toggle("nocol", !!hasCard);
     document.getElementById("rows").innerHTML = rows.map((r, i) => {
       const [q, t] = (r.includes(" ## ") ? r.split(" ## ") : ["", r]).map(x => esc(x).replace(/ \| /g, "<br>"));
-      const date = new Date((dn(START_DATE) + i) * 86400000).toISOString().slice(0, 10);
-      if (i >= EVENT_DAYS) return `<tr style="color:#94a3b8"><th>예비 ${i + 1 - EVENT_DAYS}</th><td class="qcol">${q}</td><td>${t}</td></tr>`;
-      return `<tr class="${date === today ? "today" : ""}"><th>${i + 1}일차<br>${date.slice(5).replace("-", "/")}<br><a href="./?k=${id}&d=${date}" target="_blank">카드 보기</a></th><td class="qcol">${q}</td><td>${t}</td></tr>`;
+      return `<tr><th>${i + 1}</th><td class="qcol">${q}</td><td>${t}</td></tr>`;
     }).join("");
   }
   document.getElementById("tabs").innerHTML = KEYWORDS.map(k => `<button data-id="${k.id}" style="background:${k.color}">${k.name}</button>`).join(" ");
